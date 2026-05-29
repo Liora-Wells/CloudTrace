@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from config import SAVE_DIR
+from settings.settings import SAVE_DIR
 
 
 logger = logging.getLogger("CloudTrace")

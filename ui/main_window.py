@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor, QIcon, QAction
 
-from config import (
+from core.constants import (
     FONT_FAMILY, BTN_W, BTN_H, SPACING, APP_DIR,
     resource_path, get_version, PORT_OPTIONS, AIRPORT_CODES,
+)
+from settings import (
     load_settings, save_settings, load_custom_cidrs, save_custom_cidrs,
 )
 from ui.styles import (
@@ -29,8 +31,8 @@ from ui.styles import (
     TABLE_STYLE, LOG_STYLE, btn_stylesheet,
 )
 from ui.dialogs import CustomMessageBox, HistorySelectDialog, ExportSelectDialog
-from scanner import IPv4Scanner, IPv6Scanner, ScanWorker, SpeedTestWorker
-from storage import (
+from core.scanner import IPv4Scanner, IPv6Scanner, ScanWorker, SpeedTestWorker
+from settings import (
     ensure_save_dir, save_results_to_file, load_results_from_file,
     get_history_list,
 )

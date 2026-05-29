@@ -135,7 +135,8 @@ def build():
     hidden_imports = [
         "PySide6.QtWidgets", "PySide6.QtCore", "PySide6.QtGui",
         "asyncio", "ssl",
-        "config", "network", "scanner", "storage",
+        "core", "core.compat", "core.constants", "core.network", "core.scanner",
+        "settings", "settings.settings", "settings.history",
         "ui", "ui.styles", "ui.dialogs", "ui.main_window",
     ]
     for imp in hidden_imports:

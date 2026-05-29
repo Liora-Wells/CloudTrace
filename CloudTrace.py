@@ -3,7 +3,7 @@
 
 import sys
 
-from config import IS_WIN7
+from core.compat import IS_WIN7
 
 if IS_WIN7:
     try:

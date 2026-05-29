@@ -13,11 +13,9 @@ from typing import List, Optional, Dict
 
 from PySide6.QtCore import QThread, Signal
 
-from config import (
-    IS_WIN7, get_event_loop_policy, load_or_update_ip_cache,
-    AIRPORT_CODES,
-)
-from network import (
+from core.compat import IS_WIN7, get_event_loop_policy
+from core.constants import load_or_update_ip_cache, AIRPORT_CODES
+from core.network import (
     create_compat_ssl_context, get_iata_code_async, get_iata_code_from_ip,
     get_iata_translation, measure_tcp_latency,
 )

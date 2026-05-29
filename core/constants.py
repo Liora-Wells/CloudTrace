@@ -7,32 +7,11 @@ import platform
 import json
 import time
 import logging
-import asyncio
 import requests
 from typing import List, Optional, Dict
 
 
 logger = logging.getLogger("CloudTrace")
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(levelname)s] %(message)s",
-)
-
-
-IS_WIN7 = (platform.system() == "Windows" and platform.release() == "7")
-
-if IS_WIN7:
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    except AttributeError:
-        pass
-    os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '0'
-    os.environ['QT_SCALE_FACTOR'] = '1'
-    os.environ['QT_FONT_DPI'] = '96'
-
-if sys.version_info < (3, 8):
-    print("错误: 此程序需要 Python 3.8 或更高版本")
-    sys.exit(1)
 
 
 def get_system_font():
@@ -57,8 +36,8 @@ if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(sys.executable)
     _MEIPASS = sys._MEIPASS
 else:
-    APP_DIR = os.path.dirname(os.path.abspath(__file__))
-    _MEIPASS = APP_DIR
+    APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _MEIPASS = os.path.dirname(os.path.abspath(__file__))
 
 
 def resource_path(relative_path):
@@ -82,104 +61,6 @@ CF_OFFICIAL_IPV6_URL = "https://www.cloudflare.com/ips-v6/"
 
 IP_CACHE_FILE = os.path.join(APP_DIR, "ip_cache.json")
 IP_CACHE_UPDATE_INTERVAL = 30 * 24 * 3600
-
-
-def fetch_official_cidrs(url: str):
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        lines = resp.text.splitlines()
-        return [line.strip() for line in lines if line.strip() and not line.startswith('#')]
-    except Exception as e:
-        logger.warning("获取官方列表失败 (%s): %s", url, e)
-        return None
-
-
-def load_or_update_ip_cache(ip_version: int):
-    builtin = CF_IPV4_CIDRS if ip_version == 4 else CF_IPV6_CIDRS
-    key = "ipv4" if ip_version == 4 else "ipv6"
-    url = CF_OFFICIAL_IPV4_URL if ip_version == 4 else CF_OFFICIAL_IPV6_URL
-
-    cache = {}
-    try:
-        if os.path.exists(IP_CACHE_FILE):
-            with open(IP_CACHE_FILE, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-    except Exception:
-        pass
-
-    current_time = time.time()
-    if cache.get(key) and (current_time - cache.get('update_time', 0) < IP_CACHE_UPDATE_INTERVAL):
-        return cache[key]
-
-    official_list = fetch_official_cidrs(url)
-    if official_list:
-        cache[key] = official_list
-        cache['update_time'] = current_time
-        try:
-            with open(IP_CACHE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(cache, f, ensure_ascii=False, indent=2)
-            logger.info("已更新 %s 列表（%d 个 CIDR）", key, len(official_list))
-        except Exception:
-            pass
-        return official_list
-
-    if cache.get(key):
-        logger.warning("无法更新，使用过期缓存（%d 个 CIDR）", len(cache[key]))
-        return cache[key]
-
-    logger.info("无缓存，使用内置 %s 列表", key)
-    return builtin
-
-
-SAVE_DIR = os.path.join(APP_DIR, "CloudTrace_history")
-
-SETTINGS_FILE = os.path.join(APP_DIR, "settings.json")
-CUSTOM_CIDRS_FILE = os.path.join(APP_DIR, "custom_cidrs.txt")
-
-DEFAULT_SETTINGS = {
-    "tray_on_close": False,
-    "cidr_mode": "仅官方",
-}
-
-
-def load_settings() -> dict:
-    try:
-        if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                saved = json.load(f)
-            merged = dict(DEFAULT_SETTINGS)
-            merged.update(saved)
-            return merged
-    except Exception:
-        pass
-    return dict(DEFAULT_SETTINGS)
-
-
-def save_settings(settings: dict):
-    try:
-        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error("保存设置失败: %s", e)
-
-
-def load_custom_cidrs() -> str:
-    try:
-        if os.path.exists(CUSTOM_CIDRS_FILE):
-            with open(CUSTOM_CIDRS_FILE, 'r', encoding='utf-8') as f:
-                return f.read()
-    except Exception:
-        pass
-    return ""
-
-
-def save_custom_cidrs(text: str):
-    try:
-        with open(CUSTOM_CIDRS_FILE, 'w', encoding='utf-8') as f:
-            f.write(text)
-    except Exception as e:
-        logger.error("保存自定义CIDR失败: %s", e)
 
 
 CF_IPV4_CIDRS = [
@@ -271,10 +152,49 @@ AIRPORT_CODES = {
 PORT_OPTIONS = ["443", "2053", "2083", "2087", "2096", "8443"]
 
 
-def get_event_loop_policy():
-    if sys.platform == 'win32':
-        if IS_WIN7:
-            return asyncio.WindowsSelectorEventLoopPolicy()
-        else:
-            return asyncio.WindowsProactorEventLoopPolicy()
-    return asyncio.DefaultEventLoopPolicy()
+def fetch_official_cidrs(url: str):
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        lines = resp.text.splitlines()
+        return [line.strip() for line in lines if line.strip() and not line.startswith('#')]
+    except Exception as e:
+        logger.warning("获取官方列表失败 (%s): %s", url, e)
+        return None
+
+
+def load_or_update_ip_cache(ip_version: int):
+    builtin = CF_IPV4_CIDRS if ip_version == 4 else CF_IPV6_CIDRS
+    key = "ipv4" if ip_version == 4 else "ipv6"
+    url = CF_OFFICIAL_IPV4_URL if ip_version == 4 else CF_OFFICIAL_IPV6_URL
+
+    cache = {}
+    try:
+        if os.path.exists(IP_CACHE_FILE):
+            with open(IP_CACHE_FILE, 'r', encoding='utf-8') as f:
+                cache = json.load(f)
+    except Exception:
+        pass
+
+    current_time = time.time()
+    if cache.get(key) and (current_time - cache.get('update_time', 0) < IP_CACHE_UPDATE_INTERVAL):
+        return cache[key]
+
+    official_list = fetch_official_cidrs(url)
+    if official_list:
+        cache[key] = official_list
+        cache['update_time'] = current_time
+        try:
+            with open(IP_CACHE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(cache, f, ensure_ascii=False, indent=2)
+            logger.info("已更新 %s 列表（%d 个 CIDR）", key, len(official_list))
+        except Exception:
+            pass
+        return official_list
+
+    if cache.get(key):
+        logger.warning("无法更新，使用过期缓存（%d 个 CIDR）", len(cache[key]))
+        return cache[key]
+
+    logger.info("无缓存，使用内置 %s 列表", key)
+    return builtin

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from PySide6.QtGui import QFont
-from config import FONT_FAMILY
+from core.constants import FONT_FAMILY
 
 
 FONT_TITLE = QFont(FONT_FAMILY, 28)

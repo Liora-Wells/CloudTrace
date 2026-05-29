@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from config import FONT_FAMILY
+from core.constants import FONT_FAMILY
 from ui.styles import FONT_BTN, FONT_SMALL
-from storage import get_history_list
+from settings import get_history_list
 
 
 class CustomMessageBox(QDialog):

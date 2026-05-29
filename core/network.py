@@ -9,7 +9,8 @@ import aiohttp
 import logging
 from typing import Optional
 
-from config import IS_WIN7, AIRPORT_CODES
+from core.compat import IS_WIN7
+from core.constants import AIRPORT_CODES
 
 
 logger = logging.getLogger("CloudTrace")
