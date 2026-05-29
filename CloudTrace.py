@@ -10,6 +10,7 @@ import asyncio
 import aiohttp
 import socket
 import ssl
+import logging
 from datetime import datetime
 from typing import List, Optional, Dict
 import csv  
@@ -18,6 +19,13 @@ import platform
 import json
 import shutil
 import requests
+
+
+logger = logging.getLogger("CloudTrace")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+)
 
 
 
@@ -34,8 +42,8 @@ if IS_WIN7:
     os.environ['QT_SCALE_FACTOR'] = '1'
     os.environ['QT_FONT_DPI'] = '96'
 
-if sys.version_info < (3, 6):
-    print("错误: 此程序需要 Python 3.6 或更高版本")
+if sys.version_info < (3, 8):
+    print("错误: 此程序需要 Python 3.8 或更高版本")
     sys.exit(1)
 # ===========================================
 
@@ -53,7 +61,7 @@ from PySide6.QtGui import QFont, QColor, QIcon
 def get_system_font():
     system = platform.system()
     if system == "Windows":
-        return "Microsoft YaHei, SimHei, sans-serif"
+        return "Microsoft YaHei, SimHei, SimSun, Arial, sans-serif"
     elif system == "Darwin":
         return "PingFang SC, Helvetica, sans-serif"
     else:
@@ -77,9 +85,7 @@ SPACING = 8
 
 # 保存路径 (兼容 PyInstaller 打包)
 if getattr(sys, 'frozen', False):
-    # 如果是打包后的 exe 环境，获取 exe 所在的目录
     APP_DIR = os.path.dirname(sys.executable)
-	# PyInstaller 解压临时目录，用于寻找打包进来的资源文件
     _MEIPASS = sys._MEIPASS
 else:
     # 如果是普通 Python 脚本环境，获取脚本所在的目录
@@ -121,7 +127,7 @@ def fetch_official_cidrs(url: str):
         lines = resp.text.splitlines()
         return [line.strip() for line in lines if line.strip() and not line.startswith('#')]
     except Exception as e:
-        print(f"[IP列表] 获取官方列表失败 ({url}): {e}")
+        logger.warning("获取官方列表失败 (%s): %s", url, e)
         return None
 
 def load_or_update_ip_cache(ip_version: int):
@@ -155,18 +161,18 @@ def load_or_update_ip_cache(ip_version: int):
         try:
             with open(IP_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(cache, f, ensure_ascii=False, indent=2)
-            print(f"[IP列表] 已更新 {key} 列表（{len(official_list)} 个 CIDR）")
+            logger.info("已更新 %s 列表（%d 个 CIDR）", key, len(official_list))
         except Exception:
             pass
         return official_list
 
     # 下载失败，使用缓存中已有的列表（即使过期）
     if cache.get(key):
-        print(f"[IP列表] 无法更新，使用过期缓存（{len(cache[key])} 个 CIDR）")
+        logger.warning("无法更新，使用过期缓存（%d 个 CIDR）", len(cache[key]))
         return cache[key]
 
     # 没有任何可用缓存，回退内置列表
-    print(f"[IP列表] 无缓存，使用内置 {key} 列表")
+    logger.info("无缓存，使用内置 %s 列表", key)
     return builtin
 
 SAVE_DIR = os.path.join(APP_DIR, "CloudTrace_history")
@@ -304,7 +310,7 @@ def save_results_to_file(results: List[Dict], ip_version: int, result_type: str)
         _cleanup_by_prefix(ip_label, type_label)
         return True
     except Exception as e:
-        print(f"[保存] 保存失败: {e}")
+        logger.error("保存失败: %s", e)
         return False
 
 
@@ -315,7 +321,7 @@ def _cleanup_by_prefix(ip_label: str, type_label: str):
     try:
         all_files = os.listdir(SAVE_DIR)
     except Exception as e:
-        print(f"[清理] 无法列出目录 {SAVE_DIR}: {e}")
+        logger.warning("无法列出目录 %s: %s", SAVE_DIR, e)
         return
 
     for f in all_files:
@@ -336,11 +342,11 @@ def _cleanup_by_prefix(ip_label: str, type_label: str):
         try:
             os.remove(old_file)
             deleted += 1
-            print(f"[清理] 已删除: {os.path.basename(old_file)}")
+            logger.debug("已删除: %s", os.path.basename(old_file))
         except Exception as e:
-            print(f"[清理] 删除失败 {os.path.basename(old_file)}: {e}")
+            logger.warning("删除失败 %s: %s", os.path.basename(old_file), e)
 
-    print(f"[清理] {ip_label}_{type_label}: 共{total}份, 保留{MAX_HISTORY}份, 删除{deleted}份")
+    logger.info("%s_%s: 共%d份, 保留%d份, 删除%d份", ip_label, type_label, total, MAX_HISTORY, deleted)
 
 
 def _cleanup_all_types():
@@ -353,7 +359,7 @@ def _cleanup_legacy_files():
     try:
         all_files = os.listdir(SAVE_DIR)
     except Exception as e:
-        print(f"[清理旧格式] 无法列出目录: {e}")
+        logger.warning("无法列出目录: %s", e)
         return
 
     for f in all_files:
@@ -368,9 +374,9 @@ def _cleanup_legacy_files():
             try:
                 if os.path.isfile(full_path):
                     os.remove(full_path)
-                    print(f"[清理旧格式] 已删除: {f}")
+                    logger.debug("已删除旧格式: %s", f)
             except Exception as e:
-                print(f"[清理旧格式] 删除失败 {f}: {e}")
+                logger.warning("删除旧格式失败 %s: %s", f, e)
 
 
 def load_results_from_file(filepath: str) -> Optional[Dict]:
@@ -383,7 +389,7 @@ def load_results_from_file(filepath: str) -> Optional[Dict]:
             return data
         return None
     except Exception as e:
-        print(f"[加载] 加载失败: {e}")
+        logger.error("加载失败: %s", e)
         return None
 
 
@@ -786,9 +792,9 @@ class ExportSelectDialog(QDialog):
 
 def create_compat_ssl_context():
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
     if IS_WIN7:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         if hasattr(ssl, 'TLSVersion'):
             try:
                 ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -1027,11 +1033,10 @@ class BaseScanner:
             pending = set(tasks)
             while pending:
                 if not self.running:
-                    # 取消所有未完成任务
                     for task in pending:
                         task.cancel()
-                        await asyncio.gather(*pending, return_exceptions=True)
-                        break
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    break
                 done, pending = await asyncio.wait(pending, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
 
                 for future in done:
