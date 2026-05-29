@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+/docs/
+
+# PyInstaller
+*.manifest
+*.spec
+/dist/
+/build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志
+logs/
+*.log
+
+# 运行时数据
+CloudTrace_history/
+ip_cache.json
+version.txt
+settings.json
+custom_cidrs.txt
+
+# 虚拟环境
+venv/
+.env/
+.venv/
+
+# 系统文件
+.DS_Store
+Thumbs.db

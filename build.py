@@ -133,8 +133,11 @@ def build():
 
     # ==================== 2. 强制收集核心隐式导入 ====================
     hidden_imports = [
-        "PySide6.QtWidgets", "PySide6.QtCore", "PySide6.QtGui", 
+        "PySide6.QtWidgets", "PySide6.QtCore", "PySide6.QtGui",
         "asyncio", "ssl",
+        "core", "core.compat", "core.constants", "core.network", "core.scanner",
+        "settings", "settings.settings", "settings.history",
+        "ui", "ui.styles", "ui.dialogs", "ui.main_window",
     ]
     for imp in hidden_imports:
         cmd.extend(["--hidden-import", imp])

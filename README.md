@@ -2,7 +2,7 @@
 
 # ☁️ CloudTrace 云迹
 
-[![Python 3.6+](https://img.shields.io/badge/Python-3.6%2B-blue.svg)](https://www.python.org/)
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **CloudTrace 云迹** 是一款带有现代化图形界面的 Cloudflare IP 扫描与测速工具。  
@@ -20,6 +20,7 @@
 - **全异步高并发**：基于 `asyncio` + `aiohttp` 实现，支持自定义并发数（最高 500+），极速完成海量 IP 筛选。
 - **智能随机采样**：从 Cloudflare 官方 CIDR 段智能拆分 /24 子网并随机生成 IP，避免无意义遍历，大幅提高优质 IP 命中率。
 - **精准 TCP 延迟**：采用 TCP Ping 替代传统 ICMP，有效绕过禁 Ping 环境，多次测试取最小值，数据更真实可靠。
+- **自定义 CIDR**：支持手动输入 CIDR 段，可单独使用自定义段或与官方段组合扫描，灵活应对特殊需求。
 
 ### ⚡ 专业下载测速
 - **内置真实测速**：通过 `speed.cloudflare.com` 下载大文件实测带宽，排除 ICMP 延迟与实际下载速度不符的干扰。
@@ -35,6 +36,7 @@
 - **精美深色 UI**：采用深蓝色渐变主题设计，告别枯燥命令行，带来极致视觉享受。
 - **丰富状态反馈**：测速表格自带红黄绿颜色预警（延迟/速度），前三名金银铜高亮；双击单元格即可快速复制 IP 或地区码。
 - **全自定义弹窗**：摒弃原生系统对话框，使用统一风格的自定义消息框与确认弹窗，交互体验更优雅。
+- **系统托盘**：支持关闭窗口时最小化到系统托盘，托盘菜单可快速启动扫描或显示主窗口。
 
 ### 💾 完善的数据管理
 - **自动历史存档**：扫描与测速结果自动带时间戳保存，并实时更新 `latest` 副本，支持一键加载历史记录，无需重复扫描。
@@ -57,16 +59,14 @@
 ## 🚄 安装与运行
 
 ### 环境要求
-- Python 3.6 及以上版本
+- Python 3.8 及以上版本
 - Windows 7 / 10 / 11 或其他主流操作系统
 
-### 安装步骤
+### 使用预编译版本
 
-## 使用预编译版本
+从 [Releases](https://github.com/zrf-code/CloudTrace/releases/latest) 页面下载可执行文件。
 
-从 [Releases](https://github.com/zrf-code/CloudTrace/releases/latest) 页面下载可执行文件：
-
-## 从源码运行
+### 从源码运行
 
 1. 克隆本项目：
    ```bash
@@ -124,7 +124,9 @@
 | **数量** | 参与下载测速的 IP 数量 | 默认 10。如果不是专门做对比测试，建议设为 5-10，因为测速较耗时，数量过多等待时间较长。 |
 | **端口** | 测试连接的目标端口 | 默认 443。如果 443 端口被干扰或封禁，可尝试切换为 `2053`、`2083` 等其他支持 TLS 的端口。 |
 | **并发** | 扫描阶段同时测试的连接数 | 默认 200。根据自己的网络环境调整，宽带较慢或路由器性能较弱时，建议调低至 50-100 以防断网 |
-| **阈值** | 延迟过滤阈值 | 默认 230。只保留延迟低于此数值的 IP。国内一般建议 200 以内，若只要极低延迟节点可设为 150 甚至 100。 |
+| **阈值ms** | 延迟过滤阈值 | 默认 230。只保留延迟低于此数值的 IP。国内一般建议 200 以内，若只要极低延迟节点可设为 150 甚至 100。 |
+| **CIDR** | IP 地址段来源模式 | 「仅官方」使用 Cloudflare 官方 CIDR；「仅自定义」使用手动输入的 CIDR；「官方+自定义」两者合并。 |
+| **托盘** | 关闭窗口时最小化到系统托盘 | 勾选后关闭窗口不会退出程序，而是隐藏到系统托盘继续运行。通过托盘菜单可恢复窗口或退出程序。 |
 
 > ⚠️ **注意**：修改端口、并发、阈值等参数后，需**重新进行扫描**，新参数才会在扫描阶段生效。
 
@@ -148,16 +150,28 @@
 
 ```text
 CloudTrace/
-├── CloudTrace.py             # 主程序代码
+├── CloudTrace.py             # 程序入口
 ├── build.py                  # 自动打包构建脚本
 ├── favicon.ico               # 程序图标
 ├── requirements.txt          # 依赖列表
 ├── README.md                 # 说明文档
 ├── Screenshots/              # 界面截图目录
+├── core/                     # 核心业务逻辑
+│   ├── compat.py             #   平台兼容性（Win7 适配等）
+│   ├── constants.py          #   常量定义与资源路径
+│   ├── network.py            #   网络请求与异步 TCP Ping
+│   └── scanner.py            #   扫描器与测速工作线程
+├── settings/                 # 用户配置与持久化
+│   ├── settings.py           #   用户设置读写
+│   └── history.py            #   历史文件管理
+├── ui/                       # 界面层
+│   ├── main_window.py        #   主窗口
+│   ├── dialogs.py            #   自定义对话框
+│   └── styles.py             #   样式与字体定义
 └── CloudTrace_history/       # 结果自动保存目录（运行后自动生成）
-    ├── ipv4_scan_latest.json # 最新的 IPv4 扫描结果
-    ├── ipv6_scan_latest.json # 最新的 IPv6 扫描结果
-    └── ...                   # 带时间戳的历史备份文件
+    ├── ipv4_scan_latest.json
+    ├── ipv6_scan_latest.json
+    └── ...
 ```
 
 ---
