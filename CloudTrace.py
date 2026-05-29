@@ -52,10 +52,10 @@ from PySide6.QtWidgets import (
     QLineEdit, QProgressBar, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QHBoxLayout, QHeaderView,
     QTextEdit, QComboBox, QFileDialog, QMessageBox,
-    QSpinBox, QDialog, QFrame  
+    QSpinBox, QDialog, QFrame, QPlainTextEdit, QSystemTrayIcon, QMenu, QCheckBox
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QFont, QColor, QIcon  
+from PySide6.QtGui import QFont, QColor, QIcon, QAction  
 
 
 def get_system_font():
@@ -182,6 +182,49 @@ IPV6_SCAN_FILE = os.path.join(SAVE_DIR, "ipv6_scan_latest.json")
 IPV4_SPEED_FILE = os.path.join(SAVE_DIR, "ipv4_speed_latest.json")
 IPV6_SPEED_FILE = os.path.join(SAVE_DIR, "ipv6_speed_latest.json")
 MAX_HISTORY = 5
+
+SETTINGS_FILE = os.path.join(APP_DIR, "settings.json")
+CUSTOM_CIDRS_FILE = os.path.join(APP_DIR, "custom_cidrs.txt")
+
+DEFAULT_SETTINGS = {
+    "tray_on_close": False,
+    "cidr_mode": "仅官方",
+}
+
+def load_settings() -> dict:
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            merged = dict(DEFAULT_SETTINGS)
+            merged.update(saved)
+            return merged
+    except Exception:
+        pass
+    return dict(DEFAULT_SETTINGS)
+
+def save_settings(settings: dict):
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error("保存设置失败: %s", e)
+
+def load_custom_cidrs() -> str:
+    try:
+        if os.path.exists(CUSTOM_CIDRS_FILE):
+            with open(CUSTOM_CIDRS_FILE, 'r', encoding='utf-8') as f:
+                return f.read()
+    except Exception:
+        pass
+    return ""
+
+def save_custom_cidrs(text: str):
+    try:
+        with open(CUSTOM_CIDRS_FILE, 'w', encoding='utf-8') as f:
+            f.write(text)
+    except Exception as e:
+        logger.error("保存自定义CIDR失败: %s", e)
 
 CF_IPV4_CIDRS = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
@@ -954,7 +997,8 @@ async def measure_tcp_latency(ip: str, port: int, ping_times: int = 4, timeout: 
 
 class BaseScanner:
     def __init__(self, log_callback=None, progress_callback=None, port=443,
-                 max_workers=200, timeout=1.0, ping_times=3, latency_threshold=230):
+                 max_workers=200, timeout=1.0, ping_times=3, latency_threshold=230,
+                 custom_cidrs=None):
         self.max_workers = max_workers
         self.timeout = timeout
         self.ping_times = ping_times
@@ -963,6 +1007,7 @@ class BaseScanner:
         self.log_callback = log_callback
         self.progress_callback = progress_callback
         self.port = port
+        self.custom_cidrs = custom_cidrs or {}
 
     @property
     def ip_version(self) -> int:
@@ -1099,11 +1144,22 @@ class IPv4Scanner(BaseScanner):
 
     def generate_ips_from_cidrs(self) -> List[str]:
         ip_list = []
-        # 改为从动态列表获取 CIDR
-        cidrs = load_or_update_ip_cache(4)  # 4 代表 IPv4
+        cidr_mode = self.custom_cidrs.get("mode", "仅官方")
+        custom_list = self.custom_cidrs.get("list", [])
+        official_cidrs = load_or_update_ip_cache(4)
+
+        if cidr_mode == "仅自定义":
+            cidrs = custom_list
+        elif cidr_mode == "官方+自定义":
+            cidrs = official_cidrs + custom_list
+        else:
+            cidrs = official_cidrs
+
         for cidr in cidrs:
             try:
                 network = ipaddress.ip_network(cidr, strict=False)
+                if network.version != 4:
+                    continue
                 for subnet in network.subnets(new_prefix=24):
                     hosts = list(subnet.hosts())
                     for ip in random.sample(hosts, min(2, len(hosts))):
@@ -1126,20 +1182,30 @@ class IPv6Scanner(BaseScanner):
 
     def generate_ips_from_cidrs(self) -> List[str]:
         ip_list = []
-        # 改为从动态列表获取 CIDR
-        cidrs = load_or_update_ip_cache(6)  # 6 代表 IPv6
+        cidr_mode = self.custom_cidrs.get("mode", "仅官方")
+        custom_list = self.custom_cidrs.get("list", [])
+        official_cidrs = load_or_update_ip_cache(6)
+
+        if cidr_mode == "仅自定义":
+            cidrs = custom_list
+        elif cidr_mode == "官方+自定义":
+            cidrs = official_cidrs + custom_list
+        else:
+            cidrs = official_cidrs
+
         for cidr in cidrs:
             try:
                 network = ipaddress.ip_network(cidr, strict=False)
+                if network.version != 6:
+                    continue
                 if network.num_addresses > 2:
-                    # 根据前缀长度动态决定采样数
                     prefixlen = network.prefixlen
                     if prefixlen <= 32:
-                        sample_size = 2800   # 大段多抽
+                        sample_size = 2800
                     elif prefixlen <= 40:
                         sample_size = 500
                     else:
-                        sample_size = 200   # /48 等小段保持原样
+                        sample_size = 200
 
                     max_hosts = min(sample_size, network.num_addresses - 2)
                     for _ in range(max_hosts):
@@ -1394,7 +1460,9 @@ class CloudflareScanUI(QWidget):
         self.current_ip_version = 4
 
         ensure_save_dir()
+        self.app_settings = load_settings()
         self.init_ui()
+        self._init_tray()
 
     def make_btn(self, text, color, text_color="white", enabled=True, width=BTN_W):
         btn = QPushButton(text)
@@ -1433,6 +1501,44 @@ class CloudflareScanUI(QWidget):
         label.setFont(FONT_SMALL)
         label.setStyleSheet(f'color: #E2E8F0; font-family: "{FONT_FAMILY}";')
         return label
+
+    def _init_tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        icon_path = resource_path("favicon.ico")
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
+        self.tray_icon.setToolTip(f"CloudTrace 云迹 V{get_version()}")
+
+        tray_menu = QMenu()
+
+        action_show = tray_menu.addAction("显示主窗口")
+        action_show.triggered.connect(self._tray_show_window)
+
+        tray_menu.addSeparator()
+
+        self.action_ipv4_scan = tray_menu.addAction("开始 IPv4 扫描")
+        self.action_ipv4_scan.triggered.connect(self.start_ipv4_scan)
+
+        self.action_ipv6_scan = tray_menu.addAction("开始 IPv6 扫描")
+        self.action_ipv6_scan.triggered.connect(self.start_ipv6_scan)
+
+        tray_menu.addSeparator()
+
+        action_quit = tray_menu.addAction("退出")
+        action_quit.triggered.connect(QApplication.quit)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self._tray_show_window()
+
+    def _tray_show_window(self):
+        self.show()
+        self.activateWindow()
+        self.raise_()
 
     def init_ui(self):
         main = QVBoxLayout(self)
@@ -1636,8 +1742,45 @@ class CloudflareScanUI(QWidget):
         self.input_threshold.setAlignment(Qt.AlignCenter)
         row4.addLayout(_make_group("阈值ms", self.input_threshold))
 
+        self.combo_cidr_mode = QComboBox()
+        self.combo_cidr_mode.setFixedSize(90, 28)
+        self.combo_cidr_mode.setFont(FONT_SMALL)
+        self.combo_cidr_mode.addItems(["仅官方", "仅自定义", "官方+自定义"])
+        self.combo_cidr_mode.setCurrentText(self.app_settings.get("cidr_mode", "仅官方"))
+        self.combo_cidr_mode.currentTextChanged.connect(self.on_cidr_mode_changed)
+        row4.addLayout(_make_group("CIDR", self.combo_cidr_mode))
+
+        self.chk_tray_on_close = QCheckBox("托盘")
+        self.chk_tray_on_close.setFont(FONT_SMALL)
+        self.chk_tray_on_close.setChecked(self.app_settings.get("tray_on_close", False))
+        self.chk_tray_on_close.setStyleSheet(f"""
+            QCheckBox {{
+                color: {LABEL_COLOR}; font-size: 11px;
+                font-family: "{FONT_FAMILY}"; background: transparent; border: none;
+            }}
+        """)
+        self.chk_tray_on_close.stateChanged.connect(self._on_tray_setting_changed)
+        row4.addLayout(_make_group("关闭→托盘", self.chk_tray_on_close))
+
         row4.addStretch()
         row4_layout.addLayout(row4)
+
+        self.text_custom_cidrs = QPlainTextEdit()
+        self.text_custom_cidrs.setFont(FONT_SMALL)
+        self.text_custom_cidrs.setMaximumHeight(80)
+        self.text_custom_cidrs.setPlaceholderText("每行一个 CIDR，如:\n1.2.3.0/24\n2606:4700::/32")
+        self.text_custom_cidrs.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background: {INPUT_BG}; color: {TEXT_COLOR};
+                border: 1px solid {INPUT_BORDER}; border-radius: 4px;
+                padding: 4px 6px; font-family: "{FONT_FAMILY}";
+            }}
+        """)
+        saved_cidrs = load_custom_cidrs()
+        if saved_cidrs:
+            self.text_custom_cidrs.setPlainText(saved_cidrs)
+        self.text_custom_cidrs.setVisible(self.combo_cidr_mode.currentText() != "仅官方")
+        control.addWidget(self.text_custom_cidrs)
 
         control.addWidget(param_frame)
         
@@ -1693,6 +1836,62 @@ class CloudflareScanUI(QWidget):
         if text != text.upper():
             self.input_region.setText(text.upper())
 
+    def on_cidr_mode_changed(self, mode_text):
+        self.text_custom_cidrs.setVisible(mode_text != "仅官方")
+        self.app_settings["cidr_mode"] = mode_text
+        save_settings(self.app_settings)
+
+    def _on_tray_setting_changed(self, state):
+        self.app_settings["tray_on_close"] = bool(state)
+        save_settings(self.app_settings)
+
+    def closeEvent(self, event):
+        if self.chk_tray_on_close.isChecked():
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "CloudTrace 云迹",
+                "程序已最小化到系统托盘",
+                QSystemTrayIcon.Information,
+                2000
+            )
+        else:
+            self.tray_icon.hide()
+            event.accept()
+
+    def _parse_custom_cidrs(self, ip_version: int) -> Optional[List[str]]:
+        text = self.text_custom_cidrs.toPlainText().strip()
+        if not text:
+            CustomMessageBox.warning(self, "提示", "自定义 CIDR 不能为空")
+            return None
+
+        valid = []
+        invalid = []
+        for i, line in enumerate(text.splitlines(), 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                net = ipaddress.ip_network(line, strict=False)
+                if net.version == ip_version:
+                    valid.append(line)
+            except ValueError:
+                invalid.append((i, line))
+
+        if invalid:
+            msg_lines = [f'第{no}行 "{val}" 不是有效的 CIDR' for no, val in invalid[:10]]
+            if len(invalid) > 10:
+                msg_lines.append(f"... 共 {len(invalid)} 行无效")
+            CustomMessageBox.warning(self, "CIDR 格式错误", "\n".join(msg_lines))
+            return None
+
+        if not valid:
+            ip_label = "IPv4" if ip_version == 4 else "IPv6"
+            CustomMessageBox.warning(self, "提示", f"未找到有效的{ip_label} CIDR")
+            return None
+
+        return valid
+
     def _format_region_stats(self, results: List[Dict]) -> List[str]:
         region_stats = {}
         for r in results:
@@ -1719,6 +1918,11 @@ class CloudflareScanUI(QWidget):
         self.btn_area.setEnabled(not busy and has_results)
         self.btn_full.setEnabled(not busy and has_results)
         self.btn_export.setEnabled(not busy and (has_results or bool(self.speed_results)))
+
+        if hasattr(self, 'action_ipv4_scan'):
+            self.action_ipv4_scan.setEnabled(not busy)
+        if hasattr(self, 'action_ipv6_scan'):
+            self.action_ipv6_scan.setEnabled(not busy)
 
     def load_ipv4_scan_results(self):
         if self.scanning or self.speed_testing:
@@ -1791,6 +1995,15 @@ class CloudflareScanUI(QWidget):
     def start_ipv4_scan(self):
         if self.scanning or self.speed_testing:
             return
+        cidr_mode = self.combo_cidr_mode.currentText()
+        custom_cidrs = None
+        if cidr_mode != "仅官方":
+            parsed = self._parse_custom_cidrs(4)
+            if parsed is None:
+                return
+            custom_cidrs = {"mode": cidr_mode, "list": parsed}
+            save_custom_cidrs(self.text_custom_cidrs.toPlainText())
+
         self.current_ip_version = 4
         port = int(self.combo_port.currentText())
         threshold = self.input_threshold.value()
@@ -1801,12 +2014,22 @@ class CloudflareScanUI(QWidget):
             port=port,
             max_workers=workers,
             latency_threshold=threshold,
+            custom_cidrs=custom_cidrs,
         )
         self._start_scan(scanner, "IPv4")
 
     def start_ipv6_scan(self):
         if self.scanning or self.speed_testing:
             return
+        cidr_mode = self.combo_cidr_mode.currentText()
+        custom_cidrs = None
+        if cidr_mode != "仅官方":
+            parsed = self._parse_custom_cidrs(6)
+            if parsed is None:
+                return
+            custom_cidrs = {"mode": cidr_mode, "list": parsed}
+            save_custom_cidrs(self.text_custom_cidrs.toPlainText())
+
         self.current_ip_version = 6
         port = int(self.combo_port.currentText())
         threshold = self.input_threshold.value()
@@ -1817,6 +2040,7 @@ class CloudflareScanUI(QWidget):
             port=port,
             max_workers=workers,
             latency_threshold=threshold,
+            custom_cidrs=custom_cidrs,
         )
         self._start_scan(scanner, "IPv6")
 
@@ -1864,6 +2088,15 @@ class CloudflareScanUI(QWidget):
         self.progress_bar.setValue(100)
         self.status_label.setText(f"扫描完成 ({len(results)}个IP)" if results else "扫描完成")
         self.update_ui_state(busy=False)
+
+        if not self.isVisible() and results:
+            ip_label = "IPv4" if self.current_ip_version == 4 else "IPv6"
+            self.tray_icon.showMessage(
+                "CloudTrace 扫描完成",
+                f"{ip_label}扫描完成，找到 {len(results)} 个可用 IP",
+                QSystemTrayIcon.Information,
+                3000
+            )
 
     def update_progress(self, completed, total, success, speed):
         if total > 0:
@@ -1940,6 +2173,17 @@ class CloudflareScanUI(QWidget):
             self.status_label.setText(f"测速完成 ({len(results)}个IP)")
         else:
             self.status_label.setText("测速完成: 无结果")
+
+        if not self.isVisible() and results:
+            best = results[0] if results else None
+            speed_msg = f"{best['download_speed']:.1f} MB/s" if best else "无结果"
+            region_msg = f"（{best['chinese_name']}）" if best else ""
+            self.tray_icon.showMessage(
+                "CloudTrace 测速完成",
+                f"测速完成，最快 {speed_msg}{region_msg}",
+                QSystemTrayIcon.Information,
+                3000
+            )
 
     def _populate_speed_table(self, results):
         self.speed_table.setRowCount(len(results))

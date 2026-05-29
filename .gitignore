@@ -32,6 +32,8 @@ logs/
 CloudTrace_history/
 ip_cache.json
 version.txt
+settings.json
+custom_cidrs.txt
 
 # 虚拟环境
 venv/
