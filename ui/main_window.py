@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QHeaderView,
     QTextEdit, QComboBox, QFileDialog,
     QSpinBox, QDialog, QFrame, QPlainTextEdit, QSystemTrayIcon, QMenu, QCheckBox,
-    QApplication,
+    QApplication, QGroupBox, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor, QIcon, QAction
@@ -119,7 +119,7 @@ class CloudflareScanUI(QWidget):
         self.tray_icon.show()
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.DoubleClick:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self._tray_show_window()
 
     def _tray_show_window(self):
@@ -227,13 +227,14 @@ class CloudflareScanUI(QWidget):
 
         control.addLayout(row3)
 
-        PARAM_BG = "#2153a5"
-        PARAM_BORDER = "#1E4D6B"
         INPUT_BG = "#0F2B44"
         INPUT_BORDER = "#1A3D5C"
         TEXT_COLOR = "#F1F5F9"
         LABEL_COLOR = "#FFFFFF"
         FOCUS_COLOR = "#3B82F6"
+
+        PARAM_BG = "#2153a5"
+        PARAM_BORDER = "#1E4D6B"
 
         param_style = f"""
             QFrame#paramRow {{
@@ -243,23 +244,29 @@ class CloudflareScanUI(QWidget):
                 padding: 8px 14px;
             }}
             QLabel {{
-                color: {LABEL_COLOR};
-                font-size: 11px;
-                font-family: "{FONT_FAMILY}";
-                background: transparent;
-                border: none;
+                color: {LABEL_COLOR}; font-size: 11px;
+                font-family: "{FONT_FAMILY}"; background: transparent; border: none;
                 font-weight: 500;
             }}
             QLineEdit, QSpinBox, QComboBox {{
-                background: {INPUT_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {INPUT_BORDER};
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-family: "{FONT_FAMILY}";
+                background: {INPUT_BG}; color: {TEXT_COLOR};
+                border: 1px solid {INPUT_BORDER}; border-radius: 4px;
+                padding: 2px 6px; font-family: "{FONT_FAMILY}";
             }}
             QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
                 border: 1px solid {FOCUS_COLOR};
+            }}
+            QCheckBox {{
+                color: {LABEL_COLOR}; font-size: 11px;
+                font-family: "{FONT_FAMILY}"; background: transparent; border: none;
+                spacing: 4px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px; border-radius: 3px;
+                border: 1px solid {INPUT_BORDER}; background: {INPUT_BG};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {FOCUS_COLOR}; border: 1px solid {FOCUS_COLOR};
             }}
         """
 
@@ -267,13 +274,9 @@ class CloudflareScanUI(QWidget):
         param_frame.setObjectName("paramRow")
         param_frame.setStyleSheet(param_style)
 
-        row4_layout = QVBoxLayout(param_frame)
-        row4_layout.setContentsMargins(0, 4, 0, 4)
-        row4_layout.setSpacing(6)
-
-        row4 = QHBoxLayout()
-        row4.setSpacing(20)
-        row4.addStretch()
+        param_layout = QVBoxLayout(param_frame)
+        param_layout.setContentsMargins(8, 8, 8, 8)
+        param_layout.setSpacing(6)
 
         def _make_group(label_text, widget):
             group_layout = QVBoxLayout()
@@ -287,13 +290,17 @@ class CloudflareScanUI(QWidget):
             group_layout.addWidget(widget)
             return group_layout
 
+        row_scan = QHBoxLayout()
+        row_scan.setSpacing(20)
+        row_scan.addStretch()
+
         self.input_region = QLineEdit()
         self.input_region.setFixedSize(75, 28)
         self.input_region.setFont(FONT_BTN)
         self.input_region.setPlaceholderText("")
         self.input_region.setAlignment(Qt.AlignCenter)
         self.input_region.textChanged.connect(self.auto_uppercase)
-        row4.addLayout(_make_group("地区码", self.input_region))
+        row_scan.addLayout(_make_group("地区码", self.input_region))
 
         self.input_speed_count = QSpinBox()
         self.input_speed_count.setFixedSize(60, 28)
@@ -301,7 +308,7 @@ class CloudflareScanUI(QWidget):
         self.input_speed_count.setRange(1, 50)
         self.input_speed_count.setValue(10)
         self.input_speed_count.setAlignment(Qt.AlignCenter)
-        row4.addLayout(_make_group("数量", self.input_speed_count))
+        row_scan.addLayout(_make_group("数量", self.input_speed_count))
 
         self.combo_port = QComboBox()
         self.combo_port.setFixedSize(75, 28)
@@ -309,7 +316,7 @@ class CloudflareScanUI(QWidget):
         for port in PORT_OPTIONS:
             self.combo_port.addItem(port)
         self.combo_port.setCurrentText("443")
-        row4.addLayout(_make_group("端口", self.combo_port))
+        row_scan.addLayout(_make_group("端口", self.combo_port))
 
         self.input_workers = QSpinBox()
         self.input_workers.setFixedSize(65, 28)
@@ -318,7 +325,7 @@ class CloudflareScanUI(QWidget):
         self.input_workers.setValue(200)
         self.input_workers.setSingleStep(50)
         self.input_workers.setAlignment(Qt.AlignCenter)
-        row4.addLayout(_make_group("并发", self.input_workers))
+        row_scan.addLayout(_make_group("并发", self.input_workers))
 
         self.input_threshold = QSpinBox()
         self.input_threshold.setFixedSize(65, 28)
@@ -327,30 +334,44 @@ class CloudflareScanUI(QWidget):
         self.input_threshold.setValue(230)
         self.input_threshold.setSingleStep(10)
         self.input_threshold.setAlignment(Qt.AlignCenter)
-        row4.addLayout(_make_group("阈值ms", self.input_threshold))
+        row_scan.addLayout(_make_group("阈值ms", self.input_threshold))
+
+        row_scan.addStretch()
+        param_layout.addLayout(row_scan)
+
+        row_extra = QHBoxLayout()
+        row_extra.setSpacing(20)
+        row_extra.addStretch()
 
         self.combo_cidr_mode = QComboBox()
-        self.combo_cidr_mode.setFixedSize(90, 28)
+        self.combo_cidr_mode.setFixedSize(120, 28)
         self.combo_cidr_mode.setFont(FONT_SMALL)
         self.combo_cidr_mode.addItems(["仅官方", "仅自定义", "官方+自定义"])
         self.combo_cidr_mode.setCurrentText(self.app_settings.get("cidr_mode", "仅官方"))
         self.combo_cidr_mode.currentTextChanged.connect(self.on_cidr_mode_changed)
-        row4.addLayout(_make_group("CIDR", self.combo_cidr_mode))
+        row_extra.addLayout(_make_group("CIDR", self.combo_cidr_mode))
 
-        self.chk_tray_on_close = QCheckBox("托盘")
+        self.chk_tray_on_close = QCheckBox()
         self.chk_tray_on_close.setFont(FONT_SMALL)
+        self.chk_tray_on_close.setToolTip("关闭窗口时最小化到托盘")
         self.chk_tray_on_close.setChecked(self.app_settings.get("tray_on_close", False))
-        self.chk_tray_on_close.setStyleSheet(f"""
-            QCheckBox {{
-                color: {LABEL_COLOR}; font-size: 11px;
-                font-family: "{FONT_FAMILY}"; background: transparent; border: none;
-            }}
-        """)
         self.chk_tray_on_close.stateChanged.connect(self._on_tray_setting_changed)
-        row4.addLayout(_make_group("关闭→托盘", self.chk_tray_on_close))
+        tray_layout = QVBoxLayout()
+        tray_layout.setSpacing(2)
+        tray_layout.setContentsMargins(0, 0, 0, 0)
+        tray_lbl = QLabel("托盘")
+        tray_lbl.setObjectName("paramLabel")
+        tray_lbl.setAlignment(Qt.AlignCenter)
+        tray_lbl.setFont(FONT_SMALL)
+        tray_layout.addWidget(tray_lbl)
+        tray_layout.addWidget(self.chk_tray_on_close)
+        row_extra.addLayout(tray_layout)
 
-        row4.addStretch()
-        row4_layout.addLayout(row4)
+        row_extra.addStretch()
+        param_layout.addLayout(row_extra)
+
+        param_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        control.addWidget(param_frame)
 
         self.text_custom_cidrs = QPlainTextEdit()
         self.text_custom_cidrs.setFont(FONT_SMALL)
@@ -368,8 +389,6 @@ class CloudflareScanUI(QWidget):
             self.text_custom_cidrs.setPlainText(saved_cidrs)
         self.text_custom_cidrs.setVisible(self.combo_cidr_mode.currentText() != "仅官方")
         control.addWidget(self.text_custom_cidrs)
-
-        control.addWidget(param_frame)
 
         main.addLayout(control)
 
