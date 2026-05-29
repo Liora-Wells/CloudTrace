@@ -5,6 +5,7 @@ import os
 import csv
 import ipaddress
 import json
+import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QHeaderView,
     QTextEdit, QComboBox, QFileDialog,
     QSpinBox, QDialog, QFrame, QPlainTextEdit, QSystemTrayIcon, QMenu, QCheckBox,
-    QApplication, QGroupBox, QSizePolicy,
+    QApplication, QGroupBox, QSizePolicy, QStyle,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor, QIcon, QAction
@@ -45,10 +46,8 @@ class CloudflareScanUI(QWidget):
         self.resize(480, 850)
         self.setMinimumSize(460, 650)
 
-        icon_path = resource_path("favicon.ico")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
-
+        self._setup_window_icon()
+        
         self.setStyleSheet(f"""
         QWidget {{ font-family: "{FONT_FAMILY}", sans-serif; background: #F9FAFB; }}
         """)
@@ -66,6 +65,22 @@ class CloudflareScanUI(QWidget):
         self.app_settings = load_settings()
         self.init_ui()
         self._init_tray()
+
+    def _setup_window_icon(self):
+        """设置窗口图标，带降级策略"""
+        try:
+            icon_path = resource_path("favicon.ico")
+            if os.path.exists(icon_path):
+                icon = QIcon(icon_path)
+                if not icon.isNull():
+                    self.setWindowIcon(icon)
+                    return
+        except Exception as e:
+            logging.warning(f"加载窗口图标失败: {e}")
+        
+        # 使用默认图标作为后备
+        default_icon = QApplication.style().standardIcon(QStyle.SP_ComputerIcon)
+        self.setWindowIcon(default_icon)
 
     def make_btn(self, text, color, text_color="white", enabled=True, width=BTN_W):
         btn = QPushButton(text)
@@ -92,10 +107,11 @@ class CloudflareScanUI(QWidget):
         return label
 
     def _init_tray(self):
+        """初始化系统托盘"""
         self.tray_icon = QSystemTrayIcon(self)
-        icon_path = resource_path("favicon.ico")
-        if os.path.exists(icon_path):
-            self.tray_icon.setIcon(QIcon(icon_path))
+        
+        # 设置托盘图标，带降级策略
+        self._setup_tray_icon()
         self.tray_icon.setToolTip(f"CloudTrace 云迹 V{get_version()}")
 
         tray_menu = QMenu()
@@ -114,11 +130,27 @@ class CloudflareScanUI(QWidget):
         tray_menu.addSeparator()
 
         action_quit = tray_menu.addAction("退出")
-        action_quit.triggered.connect(QApplication.quit)
+        action_quit.triggered.connect(self._quit_application)
 
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
+
+    def _setup_tray_icon(self):
+        """设置托盘图标，带降级策略"""
+        try:
+            icon_path = resource_path("favicon.ico")
+            if os.path.exists(icon_path):
+                icon = QIcon(icon_path)
+                if not icon.isNull():
+                    self.tray_icon.setIcon(icon)
+                    return
+        except Exception as e:
+            logging.warning(f"加载托盘图标失败: {e}")
+        
+        # 使用默认图标作为后备
+        default_icon = QApplication.style().standardIcon(QStyle.SP_ComputerIcon)
+        self.tray_icon.setIcon(default_icon)
 
     def _on_tray_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
@@ -128,6 +160,23 @@ class CloudflareScanUI(QWidget):
         self.show()
         self.activateWindow()
         self.raise_()
+
+    def _quit_application(self):
+        """安全退出应用程序"""
+        logging.info("用户请求退出应用程序")
+        
+        # 先停止所有任务
+        if self.scan_worker:
+            self.scan_worker.stop()
+        if self.speed_test_worker:
+            self.speed_test_worker.stop()
+        
+        # 隐藏托盘图标
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide()
+        
+        # 退出应用
+        QApplication.quit()
 
     def init_ui(self):
         main = QVBoxLayout(self)
@@ -454,17 +503,26 @@ class CloudflareScanUI(QWidget):
         save_settings(self.app_settings)
 
     def closeEvent(self, event):
+        """处理窗口关闭事件"""
+        logging.info(f"窗口关闭事件触发，托盘选项: {self.chk_tray_on_close.isChecked()}")
+        
         if self.chk_tray_on_close.isChecked():
+            # 最小化到托盘
             event.ignore()
             self.hide()
-            self.tray_icon.showMessage(
-                "CloudTrace 云迹",
-                "程序已最小化到系统托盘",
-                QSystemTrayIcon.Information,
-                2000
-            )
+            
+            # 显示提示消息
+            if hasattr(self, 'tray_icon') and self.tray_icon.isSystemTrayAvailable():
+                self.tray_icon.showMessage(
+                    "CloudTrace 云迹",
+                    "程序已最小化到系统托盘",
+                    QSystemTrayIcon.Information,
+                    2000
+                )
         else:
-            self.tray_icon.hide()
+            # 完全退出程序
+            logging.info("用户选择完全退出程序")
+            self._quit_application()
             event.accept()
 
     def _parse_custom_cidrs(self, ip_version: int) -> Optional[List[str]]:

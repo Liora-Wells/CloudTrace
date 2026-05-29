@@ -14,6 +14,40 @@ from typing import List, Optional, Dict
 logger = logging.getLogger("CloudTrace")
 
 
+def get_project_root() -> str:
+    """获取项目根目录"""
+    if getattr(sys, 'frozen', False):
+        # 打包后，从可执行文件目录往上找
+        return os.path.dirname(sys.executable)
+    else:
+        # 开发时，从当前文件 (core/constants.py) 往上两级
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+PROJECT_ROOT = get_project_root()
+
+
+def resource_path(relative_path: str) -> str:
+    """获取资源文件的绝对路径"""
+    base_path = None
+    
+    # 优先尝试从 _MEIPASS 获取（PyInstaller 打包后的临时目录）
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+        candidate = os.path.join(base_path, relative_path)
+        if os.path.exists(candidate):
+            return candidate
+    
+    # 其次尝试从项目根目录获取
+    base_path = PROJECT_ROOT
+    candidate = os.path.join(base_path, relative_path)
+    if os.path.exists(candidate):
+        return candidate
+    
+    # 最后返回相对路径作为后备
+    return relative_path
+
+
 def get_system_font():
     system = platform.system()
     if system == "Windows":
@@ -32,19 +66,8 @@ BTN_H = 32
 SPACING = 8
 
 
-if getattr(sys, 'frozen', False):
-    APP_DIR = os.path.dirname(sys.executable)
-    _MEIPASS = sys._MEIPASS
-else:
-    APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _MEIPASS = os.path.dirname(os.path.abspath(__file__))
-
-
-def resource_path(relative_path):
-    try:
-        return os.path.join(_MEIPASS, relative_path)
-    except Exception:
-        return os.path.join(APP_DIR, relative_path)
+# 保持 APP_DIR 向后兼容
+APP_DIR = PROJECT_ROOT
 
 
 def get_version():
