@@ -11,6 +11,9 @@ let state = {
 let scanResults = [];
 let speedResults = [];
 let selectedChips = new Set();
+/* 结果表勾选集合：renderResult 用 innerHTML 重建表格，必须靠它恢复勾选，
+   否则任何一次 state 事件（进度/阶段变化）都会把用户勾选清空。 */
+let checkedIps = new Set();
 let settingsLoaded = false;
 let es = null;
 let lastDoneNote = "";
@@ -223,6 +226,7 @@ function connectSSE() {
     state.stage = "idle";
     if (results) {
       scanResults = results;
+      checkedIps = new Set();
       lastDoneNote = `完成 · ${results.length} IP`;
       renderResult();
       setPage("result");
@@ -262,6 +266,9 @@ function applyState(s) {
   // 芯片选择保留交集
   const codes = new Set(scanResults.map(r => (r.iata_code || "").toUpperCase()).filter(c => c && c !== "UNKNOWN"));
   selectedChips = new Set([...selectedChips].filter(c => codes.has(c)));
+  // 勾选只保留当前结果里仍存在的 IP，避免残留到下一批数据
+  const ips = new Set(scanResults.map(r => r.ip));
+  checkedIps = new Set([...checkedIps].filter(ip => ips.has(ip)));
   renderResult();
   renderSpeed();
   renderStatus();
@@ -340,6 +347,7 @@ async function startScan() {
     await api("/api/scan/start", { method: "POST", body: JSON.stringify(body) });
     scanResults = [];
     selectedChips = new Set();
+    checkedIps = new Set();
     state.funnel = {};
     state.progress = [0, 0, 0, 0];
     lastDoneNote = "";
@@ -417,14 +425,17 @@ function renderResult() {
   const rows = visibleScanResults();
   const tbody = document.getElementById("scan-tbody");
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">没有符合条件的结果</td></tr>';
+    tbody.innerHTML = scanResults.length
+      ? '<tr><td colspan="6" class="empty">没有符合条件的结果</td></tr>'
+      : '<tr><td colspan="6" class="empty">暂无数据</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(r => {
     const cls = r.latency < 100 * factor ? "lat-g" : (r.latency < 200 * factor ? "lat-o" : "lat-r");
     const region = r.iata_code ? `${r.chinese_name} (${r.iata_code})` : "未知";
+    const checked = checkedIps.has(r.ip) ? " checked" : "";
     return `<tr>
-      <td class="t-c"><input type="checkbox" data-ip="${r.ip}"></td>
+      <td class="t-c"><input type="checkbox" data-ip="${r.ip}"${checked}></td>
       <td class="mono">${r.ip}</td>
       <td class="t-c">${region}</td>
       <td class="t-c ${cls}">${Number(r.latency).toFixed(1)} ms</td>
@@ -433,6 +444,14 @@ function renderResult() {
     </tr>`;
   }).join("");
 }
+
+/* 事件委托：表格由 innerHTML 重建，行内 checkbox 无法逐个绑定，统一在 tbody 上监听 */
+document.getElementById("scan-tbody").addEventListener("change", e => {
+  const cb = e.target;
+  if (!cb || cb.type !== "checkbox" || !cb.dataset.ip) return;
+  if (cb.checked) checkedIps.add(cb.dataset.ip);
+  else checkedIps.delete(cb.dataset.ip);
+});
 
 ["chk-latency", "in-latency", "sel-sort"].forEach(id => {
   document.getElementById(id).addEventListener("change", renderResult);
@@ -588,6 +607,7 @@ async function loadHistoryFile(filepath, type) {
     if (type === "scan") {
       scanResults = resp.results;
       selectedChips = new Set();
+      checkedIps = new Set();
       state.funnel = {};
       renderResult();
       appendLog(`✅ 已加载扫描记录 (${resp.save_time})，共 ${resp.results.length} 个IP`);

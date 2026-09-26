@@ -170,7 +170,8 @@ class SettingsPage(QWidget):
         mrow.addWidget(self.spin_interval)
         mrow.addStretch()
         card测速.body().addLayout(mrow)
-        left.addWidget(card测速)
+        # 放右列：左列已有 3 张卡片，再堆第 4 张会让右列下方大片留白
+        right.addWidget(card测速)
 
         # ---- HTTP 服务面板 ----
         card_http = Card("HTTP 服务面板")

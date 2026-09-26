@@ -13,6 +13,11 @@
   --red: #EF4444;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* hidden 属性必须显式声明：
+   UA 样式里的 [hidden]{display:none} 优先级极低，会被作者样式
+   .field{display:flex} / .set-row{display:flex} 直接覆盖，
+   导致 #wrap-cidr / #wrap-import / #row-speed-url 等永远显示。 */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -150,8 +155,11 @@ tbody tr:hover td { background: #EFF6FF; }
   font-family: inherit; font-size: 12px; background: #fff;
 }
 .toolbar select:focus, .toolbar input:focus { outline: none; border-color: var(--blue); }
-input[type="number"] { width: 76px; }
-input.w-narrow { width: 64px; }
+/* 注意：不要写全局 input[type="number"]{width:...}。它与 .field input{width:100%}
+   同优先级且定义在后，会把扫描页「并发数/延迟阈值/采样上限/探测次数」四个
+   输入框压成固定窄宽、无法填满网格。宽度只应在 .toolbar 作用域内限定。 */
+.toolbar input[type="number"], .toolbar input[type="text"] { width: 90px; }
+.toolbar input.w-narrow { width: 64px; }
 
 /* ---------- 日志终端 ---------- */
 .term {

@@ -219,6 +219,7 @@ class FunnelBar(QWidget):
         self._layout.setSpacing(8)
         self._layout.addStretch()
         self._labels: List[QLabel] = []
+        self.set_steps([])   # 初始就渲染占位，避免卡片空着
 
     def set_steps(self, steps: List[Tuple[str, object]]):
         """steps: [(label, value)]；value 为 None 时不显示数值。"""
@@ -226,6 +227,18 @@ class FunnelBar(QWidget):
             lab = self._labels.pop()
             self._layout.removeWidget(lab)
             lab.deleteLater()
+
+        if not steps:
+            # 空漏斗必须给占位文案，否则卡片只剩标题、看起来像渲染失败
+            lab = QLabel("等待开始")
+            lab.setFont(QFont(FONT_FAMILY, 10))
+            lab.setStyleSheet(
+                "background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF;"
+                "border-radius: 8px; padding: 5px 11px; font-family: '%s';" % FONT_FAMILY
+            )
+            self._layout.insertWidget(0, lab)
+            self._labels.append(lab)
+            return
 
         for i, (label, value) in enumerate(steps):
             if i > 0:
