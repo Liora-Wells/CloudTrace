@@ -17,7 +17,8 @@ let lastDoneNote = "";
 
 const DEFAULT_SETTINGS = {
   tray_on_close: false, cidr_mode: "仅官方", scan_mode: "tcping", sample_max: 5000,
-  speed_url: "auto", min_speed: 0, verify_nodes: true,
+  workers: 200, latency_threshold: 230, ping_times: 0,
+  speed_url: "auto", min_speed: 0, verify_nodes: true, download_interval: 3,
   score_speed_weight: 3.0, score_latency_weight: 3.0,
   http_enabled: true, http_port: 17443, allow_lan: false, http_token: "",
 };
@@ -166,10 +167,9 @@ function renderStatus() {
   const pct = p[1] ? Math.round(p[0] / p[1] * 100) : (state.stage === "idle" ? 0 : 0);
   document.getElementById("progress-bar").style.width = (busy() ? pct : (lastDoneNote ? 100 : 0)) + "%";
 
-  const sp = state.speed_progress;
   document.getElementById("speed-label").textContent =
     state.stage === "scanning"
-      ? `速度: ${state.progress[3] ? state.progress[3].toFixed(0) : 0} IP/s | 成功: ${state.progress[2]}`
+      ? `速度: ${Number(state.progress[3] || 0).toFixed(0)} IP/s | 成功: ${state.progress[2]}`
       : `结果: 扫描 ${scanResults.length} · 测速 ${speedResults.length}`;
 }
 
@@ -254,9 +254,11 @@ function connectSSE() {
 function applyState(s) {
   const first = !settingsLoaded;
   Object.assign(state, s);
-  document.getElementById("app-version").textContent = "v" + (s.version || "?");
-  scanResults = s.scan_results || [];
-  speedResults = s.speed_results || [];
+  document.getElementById("app-version").textContent = "v" + (s.version || state.version || "?");
+  // 注意：EV_STATE 可能是「完整快照」，也可能是仅含 stage 的局部事件。
+  // 只有快照里确实带上结果数组时才覆盖，否则会把已扫描/已测速的结果清空。
+  if (Array.isArray(s.scan_results)) scanResults = s.scan_results;
+  if (Array.isArray(s.speed_results)) speedResults = s.speed_results;
   // 芯片选择保留交集
   const codes = new Set(scanResults.map(r => (r.iata_code || "").toUpperCase()).filter(c => c && c !== "UNKNOWN"));
   selectedChips = new Set([...selectedChips].filter(c => codes.has(c)));
@@ -270,14 +272,13 @@ function applyState(s) {
     const st = s.settings;
     if (st.scan_mode) setSeg(document.getElementById("seg-mode"), st.scan_mode);
     if (st.sample_max) document.getElementById("in-sample").value = st.sample_max;
+    if (st.workers) document.getElementById("in-workers").value = st.workers;
+    if (st.latency_threshold) document.getElementById("in-threshold").value = st.latency_threshold;
     if (st.cidr_mode && [...document.getElementById("sel-source").options].some(o => o.value === st.cidr_mode)) {
       document.getElementById("sel-source").value = st.cidr_mode;
     }
     onSourceChange();
     settingsLoaded = true;
-  }
-  if (s.stage === "idle") {
-    if (s.scan_results && s.scan_results.length && !lastDoneNote) lastDoneNote = "";
   }
 }
 

@@ -65,9 +65,10 @@ class CloudflareScanUI(QWidget):
         self.setMinimumSize(960, 640)
 
         self._setup_window_icon()
-        self.setStyleSheet(f"""
+        self._window_qss = f"""
         QWidget {{ font-family: "{FONT_FAMILY}", sans-serif; background: #F9FAFB; color: #111827; }}
-        """)
+        """
+        self.setStyleSheet(self._window_qss)
 
         self.scanning = False
         self.speed_testing = False
@@ -75,6 +76,7 @@ class CloudflareScanUI(QWidget):
         self.speed_results: List[Dict] = []
         self.current_scan_port = 443
         self.current_ip_version = 4
+        self.current_scan_mode = "tcping"
         self.current_funnel: Dict[str, int] = {}
         self.current_page = PAGE_SCAN
 
@@ -97,6 +99,43 @@ class CloudflareScanUI(QWidget):
         self.bridge.scan_aborted.connect(self._scan_aborted)
         self.bridge.speed_progress.connect(self._on_speed_progress)
         self.bridge.speed_completed.connect(self._speed_finished)
+        self.bridge.state_changed.connect(self._on_state_snapshot)
+
+    def _on_state_snapshot(self, snap: dict):
+        """任务状态快照变化 → 同步另一侧 UI（Web 面板/历史加载）写入的结果。
+
+        只在本窗口持有的结果与快照「不是同一批数据」时才刷新，避免每次
+        stage 变化都重建表格、丢失勾选状态。
+        """
+        scan = snap.get("scan_results")
+        if self._results_differ(scan, self.scan_results):
+            self.scan_results = list(scan)
+            self.current_scan_port = (self.scan_results[0].get("port", 443)
+                                      if self.scan_results else self.current_scan_port)
+            self.current_ip_version = (self.scan_results[0].get("ip_version", self.current_ip_version)
+                                       if self.scan_results else self.current_ip_version)
+            self.current_scan_mode = (self.scan_results[0].get("scan_mode", self.current_scan_mode)
+                                      if self.scan_results else self.current_scan_mode)
+            if hasattr(self, "result_page"):
+                self.result_page.set_results(self.scan_results, dict(self.current_funnel),
+                                             self.current_scan_mode)
+
+        speed = snap.get("speed_results")
+        if self._results_differ(speed, self.speed_results):
+            self.speed_results = list(speed)
+            if hasattr(self, "speed_page"):
+                self.speed_page.set_results(self.speed_results)
+
+    @staticmethod
+    def _results_differ(new, current) -> bool:
+        if new is None:
+            return False
+        if len(new) != len(current):
+            return True
+        if not new:
+            return False
+        # snapshot() 复制的是列表本身而非元素，用首元素身份判断是否同一批数据
+        return new[0] is not current[0]
 
     def _on_log(self, msg: str):
         self.scan_page.log(msg)
@@ -192,7 +231,9 @@ class CloudflareScanUI(QWidget):
         main.addWidget(self.stack, 1)
 
         root.addLayout(main, 1)
-        self.setStyleSheet(PILL_STYLE)
+        # 注意：setStyleSheet 是「覆盖」而非「追加」，必须把全局窗口规则一起带上，
+        # 否则 __init__ 中设置的字体/背景/文字色会被丢弃。
+        self.setStyleSheet(self._window_qss + PILL_STYLE)
 
         # ---- 页面信号 ----
         self.scan_page.start_requested.connect(self._start_scan_from_page)
@@ -294,6 +335,7 @@ class CloudflareScanUI(QWidget):
         params = self.scan_page.collect()
         if params is None:
             return
+        self.scan_page.persist_scan_params()
         if params["source_mode"] in ("仅自定义", "官方+自定义"):
             save_custom_cidrs(params["cidr_text"])
 
@@ -308,6 +350,7 @@ class CloudflareScanUI(QWidget):
         self.current_funnel = {}
         self.current_ip_version = scanner.ip_version
         self.current_scan_port = params["port"]
+        self.current_scan_mode = params["scan_mode"]
 
         self.result_page.set_empty()
         self.speed_page.set_results([])
@@ -329,6 +372,8 @@ class CloudflareScanUI(QWidget):
         if results:
             save_results_to_file(results, self.current_ip_version, "scan")
             scan_mode = results[0].get("scan_mode", "tcping")
+            self.current_scan_mode = scan_mode
+            self.current_scan_port = results[0].get("port", self.current_scan_port)
             self.result_page.set_results(results, dict(self.current_funnel), scan_mode)
             self.scan_page.log(f"✅ 扫描完成: {len(results)} 个可用IP，已存入历史")
             for line in self._region_lines(results)[:10]:
@@ -410,7 +455,8 @@ class CloudflareScanUI(QWidget):
                 f"未找到地区码 {region} 的IP\n可用地区码: {', '.join(available[:30])}"
             )
             return
-        self._start_speed_test(region_code=region)
+        # 与「结果页地区芯片」保持同一语义：测该地区全部匹配 IP
+        self._start_speed_test(selected_ips=matched, label="地区测速")
 
     def _start_full_speed(self):
         self._start_speed_test()
@@ -515,6 +561,10 @@ class CloudflareScanUI(QWidget):
             self.current_ip_version = data.get("ip_version", self.current_ip_version)
             self.current_scan_port = results[0].get("port", 443)
             scan_mode = results[0].get("scan_mode", "tcping")
+            self.current_scan_mode = scan_mode
+            self.current_funnel = {}
+            # 同步到全局任务状态，保证 Web 面板看到的是同一份数据
+            task_manager.set_scan_results(results)
             self.result_page.set_results(results, {}, scan_mode)
             self.scan_page.log(f"✅ 已加载扫描记录 ({save_time})，共 {len(results)} 个IP")
             self._set_status(f"已加载 {len(results)} IP", "idle")
@@ -522,6 +572,7 @@ class CloudflareScanUI(QWidget):
         else:
             self.speed_results = results
             self.current_ip_version = data.get("ip_version", self.current_ip_version)
+            task_manager.set_speed_results(results)
             self.speed_page.set_results(results)
             self.scan_page.log(f"✅ 已加载测速记录 ({save_time})，共 {len(results)} 条")
             self._set_status(f"已加载 {len(results)} 条测速", "idle")
@@ -623,6 +674,8 @@ class CloudflareScanUI(QWidget):
 
     def _quit_application(self):
         logging.info("用户请求退出应用程序")
+        if hasattr(self, "bridge"):
+            self.bridge.detach()
         task_manager.stop(wait=True, timeout=3.0)
         http_server.stop()
         if hasattr(self, "tray_icon"):
@@ -630,15 +683,17 @@ class CloudflareScanUI(QWidget):
         QApplication.quit()
 
     def closeEvent(self, event):
-        if self.app_settings.get("tray_on_close", False):
+        # 勾选「关闭到托盘」但系统没有托盘时，隐藏窗口会让程序无法再被唤出，
+        # 因此这种情况下按正常关闭处理。
+        tray_available = QSystemTrayIcon.isSystemTrayAvailable()
+        if self.app_settings.get("tray_on_close", False) and tray_available:
             event.ignore()
             self.hide()
-            if hasattr(self, "tray_icon") and self.tray_icon.isSystemTrayAvailable():
-                self.tray_icon.showMessage(
-                    "CloudTrace 云迹",
-                    "程序已最小化到系统托盘",
-                    QSystemTrayIcon.Information, 2000,
-                )
+            self.tray_icon.showMessage(
+                "CloudTrace 云迹",
+                "程序已最小化到系统托盘",
+                QSystemTrayIcon.Information, 2000,
+            )
         else:
             self._quit_application()
             event.accept()

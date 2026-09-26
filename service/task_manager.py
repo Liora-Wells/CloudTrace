@@ -74,15 +74,28 @@ class TaskManager:
         """外部（如历史加载）写入扫描结果，保持双 UI 状态一致。"""
         with self._lock:
             self.scan_results = list(results or [])
+        self._emit_state()
 
     def set_speed_results(self, results: List[Dict]):
         with self._lock:
             self.speed_results = list(results or [])
+        self._emit_state()
+
+    def _emit_state(self):
+        """广播完整状态快照。
+
+        订阅方（Web 面板 / Qt 桥）都把 EV_STATE 当作「完整快照」处理，
+        因此这里必须发送 snapshot() 全量数据；只发 {"stage": ...} 会让
+        Web 端把缺失字段当成空值，从而清空已扫描/已测速的结果。
+        """
+        snap = self.snapshot()
+        snap["stage"] = self.stage
+        self.bus.emit(EV_STATE, snap)
 
     def _set_stage(self, stage: str):
         with self._lock:
             self.stage = stage
-        self.bus.emit(EV_STATE, {"stage": stage})
+        self._emit_state()
 
     def _log(self, msg: str):
         with self._lock:
@@ -135,7 +148,7 @@ class TaskManager:
         scanner.progress_callback = self._on_scan_progress
         scanner.funnel_callback = self._set_funnel
 
-        self.bus.emit(EV_STATE, {"stage": STAGE_SCANNING})
+        self._emit_state()
         thread.start()
         return True
 
@@ -197,7 +210,7 @@ class TaskManager:
         speed_task.log_callback = self._log
         speed_task.progress_callback = self._on_speed_progress
 
-        self.bus.emit(EV_STATE, {"stage": STAGE_TESTING})
+        self._emit_state()
         thread.start()
         return True
 

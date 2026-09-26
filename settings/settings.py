@@ -21,10 +21,14 @@ DEFAULT_SETTINGS = {
     # 扫描
     "scan_mode": "tcping",          # tcping | httping
     "sample_max": 5000,
+    "workers": 200,
+    "latency_threshold": 230,
+    "ping_times": 0,                # 0 = 自动（IPv4 三次 / IPv6 两次）
     # 测速
     "speed_url": "auto",
     "min_speed": 0,
     "verify_nodes": True,
+    "download_interval": 3,
     # 综合评分权重
     "score_speed_weight": 3.0,
     "score_latency_weight": 3.0,

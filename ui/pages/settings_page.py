@@ -313,7 +313,10 @@ class SettingsPage(QWidget):
         self.app_settings.clear()
         self.app_settings.update(dict(DEFAULT_SETTINGS))
         save_settings(self.app_settings)
-        CustomMessageBox.information(self, "完成", "已恢复默认设置，重启后所有默认值生效")
+        # 必须把表单回填为默认值，否则界面仍显示旧值，
+        # 用户再点「保存设置」会把旧值重新写回，恢复默认形同无效。
+        self.reload_from_settings()
+        CustomMessageBox.information(self, "完成", "已恢复默认设置")
         self.saved.emit(dict(self.app_settings))
 
     def show_health(self):

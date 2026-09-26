@@ -14,7 +14,7 @@ from PySide6.QtGui import QFont
 from core.constants import FONT_FAMILY, PORT_OPTIONS
 from core.importer import parse_ip_list, load_entries_from_file
 from core.factory import parse_cidr_lines
-from settings import load_custom_cidrs
+from settings import load_custom_cidrs, save_settings
 from ui.widgets import Card, Segmented, FunnelBar, LogTerminal
 from ui.styles import FONT_SMALL, FIELD_STYLE, C_BLUE, C_MUTED, btn_stylesheet
 from ui.dialogs import CustomMessageBox
@@ -99,7 +99,7 @@ class ScanPage(QWidget):
 
         self.spin_ping = QSpinBox()
         self.spin_ping.setRange(0, 10)
-        self.spin_ping.setValue(0)
+        self.spin_ping.setValue(int(self.app_settings.get("ping_times", 0)))
         self.spin_ping.setSpecialValueText("自动")
         self.spin_ping.setFixedHeight(30)
         grid.addLayout(field("探测次数(0=自动)", self.spin_ping), 1, 2)
@@ -153,6 +153,7 @@ class ScanPage(QWidget):
         self.btn_import_file.clicked.connect(self._import_file)
         import_hint = QLabel("未填端口时使用上方「端口」参数")
         import_hint.setStyleSheet(f"color: {C_MUTED}; font-size: 11px; border: none; background: transparent;")
+        self.import_hint = import_hint
         import_btn_row.addWidget(self.btn_import_file)
         import_btn_row.addWidget(import_hint)
         import_btn_row.addStretch()
@@ -205,6 +206,23 @@ class ScanPage(QWidget):
         self.text_cidrs.setVisible(is_custom and not is_import)
         self.text_import.setVisible(is_import)
         self.btn_import_file.setVisible(is_import)
+        self.import_hint.setVisible(is_import)
+        # 来源模式需要持久化，否则重启后总是回到「仅官方」（旧版行为回归）
+        if self.app_settings.get("cidr_mode") != mode:
+            self.app_settings["cidr_mode"] = mode
+            save_settings(self.app_settings)
+
+    def persist_scan_params(self):
+        """把扫描页参数写回设置，保证下次启动沿用（不覆盖设置页拥有的 sample_max/scan_mode）。"""
+        changed = False
+        for key, value in (("workers", self.spin_workers.value()),
+                           ("latency_threshold", self.spin_threshold.value()),
+                           ("ping_times", self.spin_ping.value())):
+            if self.app_settings.get(key) != value:
+                self.app_settings[key] = value
+                changed = True
+        if changed:
+            save_settings(self.app_settings)
 
     def _import_file(self):
         path, _ = QFileDialog.getOpenFileName(

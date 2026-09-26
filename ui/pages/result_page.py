@@ -33,6 +33,7 @@ class ResultPage(QWidget):
         super().__init__(parent)
         self.all_results: List[Dict] = []
         self.scan_mode = "tcping"
+        self._checked_ips: set = set()
         self._build()
 
     def _build(self):
@@ -120,6 +121,7 @@ class ResultPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         self.table.doubleClicked.connect(self._copy_cell)
+        self.table.itemChanged.connect(self._on_item_changed)
         table_card.body().addWidget(self.table, 1)
         outer.addWidget(table_card, 1)
 
@@ -132,6 +134,9 @@ class ResultPage(QWidget):
     def set_results(self, results: List[Dict], funnel: dict = None, scan_mode: str = "tcping"):
         self.all_results = list(results or [])
         self.scan_mode = scan_mode or "tcping"
+        # 换了一批数据：清空旧的勾选，避免把勾选状态带到不相关的 IP 上
+        valid_ips = {r.get("ip") for r in self.all_results}
+        self._checked_ips &= valid_ips
 
         # 过滤阈值同步到当前最大延迟，避免刚扫完就被默认值藏掉全部结果
         if self.all_results:
@@ -158,14 +163,21 @@ class ResultPage(QWidget):
         self.lbl_summary.setText(f"共 {len(self.all_results)} 个 IP · 模式 {mode_txt}")
         self._refresh_table()
 
+    def _latency_factor(self) -> float:
+        """延迟换算系数：以当前结果的扫描方式与端口为准（结果页内部口径统一）。"""
+        if not self.all_results:
+            return 1.0
+        port = self.all_results[0].get("port", 443)
+        return effective_latency_threshold(100, self.scan_mode, port) / 100.0
+
     def _visible_results(self) -> List[Dict]:
         data = self.all_results
         codes = self.chips.selected_codes()
         if codes:
             data = [r for r in data if (r.get("iata_code") or "").upper() in codes]
         if self.chk_latency.isChecked():
-            port = self.all_results[0].get("port", 443) if self.all_results else 443
-            limit = effective_latency_threshold(self.spin_latency.value(), self.scan_mode, port)
+            limit = effective_latency_threshold(self.spin_latency.value(),
+                                                self.scan_mode, self.current_port())
             data = filter_by_latency(data, limit)
         if self.combo_sort.currentText() == "按地区排序":
             data = sorted(data, key=lambda r: (r.get("iata_code") or "zzz", r.get("latency", 0)))
@@ -173,50 +185,69 @@ class ResultPage(QWidget):
             data = sorted(data, key=lambda r: r.get("latency", 0))
         return data
 
+    def current_port(self) -> int:
+        return self.all_results[0].get("port", 443) if self.all_results else 443
+
     def _refresh_table(self):
         data = self._visible_results()
-        port = data[0].get("port", 443) if data else 443
-        factor = effective_latency_threshold(100, self.scan_mode, port) / 100.0
+        factor = self._latency_factor()
 
-        self.table.setRowCount(len(data))
-        for i, r in enumerate(data):
-            chk = QTableWidgetItem()
-            chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            chk.setCheckState(Qt.Unchecked)
-            chk.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(i, 0, chk)
+        self._loading_table = True
+        try:
+            self.table.setRowCount(len(data))
+            for i, r in enumerate(data):
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                chk.setCheckState(Qt.Checked if r.get("ip") in self._checked_ips else Qt.Unchecked)
+                chk.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(i, 0, chk)
 
-            self.table.setItem(i, 1, QTableWidgetItem(r.get("ip", "")))
+                self.table.setItem(i, 1, QTableWidgetItem(r.get("ip", "")))
 
-            code = r.get("iata_code") or ""
-            name = r.get("chinese_name", code) if code else "未知"
-            region_item = QTableWidgetItem(f"{name} ({code})" if code else name)
-            region_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(i, 2, region_item)
+                code = r.get("iata_code") or ""
+                name = r.get("chinese_name", code) if code else "未知"
+                region_item = QTableWidgetItem(f"{name} ({code})" if code else name)
+                region_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(i, 2, region_item)
 
-            latency = r.get("latency", 0)
-            lat_item = QTableWidgetItem(f"{latency:.1f} ms")
-            lat_item.setTextAlignment(Qt.AlignCenter)
-            if latency < 100 * factor:
-                lat_item.setForeground(QColor("#22C55E"))
-            elif latency < 200 * factor:
-                lat_item.setForeground(QColor("#F97316"))
-            else:
-                lat_item.setForeground(QColor("#EF4444"))
-            self.table.setItem(i, 3, lat_item)
+                latency = r.get("latency", 0)
+                lat_item = QTableWidgetItem(f"{latency:.1f} ms")
+                lat_item.setTextAlignment(Qt.AlignCenter)
+                if latency < 100 * factor:
+                    lat_item.setForeground(QColor("#22C55E"))
+                elif latency < 200 * factor:
+                    lat_item.setForeground(QColor("#F97316"))
+                else:
+                    lat_item.setForeground(QColor("#EF4444"))
+                self.table.setItem(i, 3, lat_item)
 
-            port_item = QTableWidgetItem(str(r.get("port", "")))
-            port_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(i, 4, port_item)
+                port_item = QTableWidgetItem(str(r.get("port", "")))
+                port_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(i, 4, port_item)
 
-            time_item = QTableWidgetItem(r.get("scan_time", ""))
-            time_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(i, 5, time_item)
+                time_item = QTableWidgetItem(r.get("scan_time", ""))
+                time_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(i, 5, time_item)
+        finally:
+            self._loading_table = False
 
         self.lbl_summary.setText(
             f"显示 {len(data)} / {len(self.all_results)} 个 IP"
             + (f" · 模式 {'HTTPing' if self.scan_mode == 'httping' else 'TCPing'}")
         )
+
+    def _on_item_changed(self, item):
+        """记录勾选状态：刷新表格/切换排序后勾选不丢失。"""
+        if getattr(self, "_loading_table", False) or item.column() != 0:
+            return
+        ip_item = self.table.item(item.row(), 1)
+        if not ip_item:
+            return
+        ip = ip_item.text()
+        if item.checkState() == Qt.Checked:
+            self._checked_ips.add(ip)
+        else:
+            self._checked_ips.discard(ip)
 
     # ---------------- 交互 ----------------
     def _row_info(self) -> Optional[dict]:
@@ -275,6 +306,7 @@ class ResultPage(QWidget):
 
     def set_empty(self):
         self.all_results = []
+        self._checked_ips = set()
         self.chips.set_stats([])
         self.funnel_bar.clear()
         self.lbl_summary.setText("")

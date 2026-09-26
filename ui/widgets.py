@@ -88,9 +88,6 @@ class FlowLayout(QLayout):
         return y + line_height - rect.y() + m.bottom()
 
 
-from PySide6.QtCore import QPoint  # noqa: E402
-
-
 class Segmented(QWidget):
     """分段选择器（容器边框 + 内部按钮）。"""
 

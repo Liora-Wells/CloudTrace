@@ -74,12 +74,16 @@ class HistoryPage(QWidget):
             item = self.inner_lay.takeAt(0)
             w = item.widget()
             if w:
+                # 先脱离父级再延迟销毁，否则旧卡片在事件循环处理 deleteLater
+                # 之前仍会留在界面上，出现重影/叠加。
+                w.setParent(None)
                 w.deleteLater()
             elif item.layout():
                 sub = item.layout()
                 while sub.count():
                     s = sub.takeAt(0)
                     if s.widget():
+                        s.widget().setParent(None)
                         s.widget().deleteLater()
 
         for type_label, type_key, icon in (("扫描记录", "scan", "📡"), ("测速记录", "speed", "🚀")):
