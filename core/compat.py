@@ -4,15 +4,7 @@
 import sys
 import os
 import platform
-import logging
 import asyncio
-
-
-logger = logging.getLogger("CloudTrace")
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(levelname)s] %(message)s",
-)
 
 
 IS_WIN7 = (platform.system() == "Windows" and platform.release() == "7")

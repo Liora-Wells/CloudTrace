@@ -5,5 +5,5 @@ from settings.settings import (
 )
 from settings.history import (
     ensure_save_dir, save_results_to_file, load_results_from_file,
-    get_history_list,
+    get_history_list, delete_history,
 )

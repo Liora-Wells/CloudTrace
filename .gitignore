@@ -43,3 +43,11 @@ venv/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 打包工具与临时产物
+upx-*/
+build - *.py
+cf_scan_*.csv
+cf_speed_*.csv
+node_modules/
+

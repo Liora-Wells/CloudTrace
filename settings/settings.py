@@ -18,6 +18,21 @@ CUSTOM_CIDRS_FILE = os.path.join(APP_DIR, "custom_cidrs.txt")
 DEFAULT_SETTINGS = {
     "tray_on_close": False,
     "cidr_mode": "仅官方",
+    # 扫描
+    "scan_mode": "tcping",          # tcping | httping
+    "sample_max": 5000,
+    # 测速
+    "speed_url": "auto",
+    "min_speed": 0,
+    "verify_nodes": True,
+    # 综合评分权重
+    "score_speed_weight": 3.0,
+    "score_latency_weight": 3.0,
+    # HTTP 服务面板
+    "http_enabled": True,
+    "http_port": 17443,
+    "allow_lan": False,
+    "http_token": "",
 }
 
 

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudTrace 云迹</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ 左侧导航 ============ -->
+  <aside class="sidebar">
+    <div class="logo"><span class="ico">☁</span>CloudTrace<span class="sub">云迹 · 面板</span></div>
+    <nav class="nav">
+      <div class="nav-item active" data-page="scan"><span class="ico">📡</span>扫描</div>
+      <div class="nav-item" data-page="result"><span class="ico">📋</span>结果</div>
+      <div class="nav-item" data-page="speed"><span class="ico">🚀</span>测速</div>
+      <div class="nav-item" data-page="history"><span class="ico">🕘</span>历史</div>
+      <div class="nav-item" data-page="settings"><span class="ico">⚙️</span>设置</div>
+    </nav>
+    <div class="sidebar-footer" id="app-version">…</div>
+  </aside>
+
+  <!-- ============ 主区 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <h2 id="page-title">扫描</h2>
+      <span class="pill" id="status-pill">就绪</span>
+      <span class="muted" id="meta-label"></span>
+      <div class="spacer"></div>
+      <span class="muted" id="speed-label">速度: 0 IP/s</span>
+      <button class="btn btn-ghost btn-sm" id="btn-stop" disabled>⏹ 停止</button>
+      <button class="btn btn-primary" id="btn-cta">▶ 开始扫描</button>
+    </header>
+    <div class="top-progress"><i id="progress-bar"></i></div>
+
+    <main class="content">
+
+      <!-- ========== 扫描 ========== -->
+      <section class="page show" id="page-scan">
+        <div class="grid grid-2">
+          <div class="card">
+            <h3>扫描参数</h3>
+            <div class="grid grid-3">
+              <div class="field"><label>IP 版本</label>
+                <div class="seg" id="seg-version"><span class="on" data-v="4">IPv4</span><span data-v="6">IPv6</span></div>
+              </div>
+              <div class="field"><label>端口</label>
+                <select id="in-port">
+                  <option>443</option><option>2053</option><option>2083</option>
+                  <option>2087</option><option>2096</option><option>8443</option>
+                </select>
+              </div>
+              <div class="field"><label>并发数</label><input type="number" id="in-workers" value="200" min="10" max="500"></div>
+              <div class="field"><label>延迟阈值 (ms)</label><input type="number" id="in-threshold" value="230" min="50" max="999"></div>
+              <div class="field"><label>采样上限</label><input type="number" id="in-sample" value="5000" min="100" max="50000"></div>
+              <div class="field"><label>探测次数 (0=自动)</label><input type="number" id="in-ping" value="0" min="0" max="10"></div>
+              <div class="field"><label>扫描方式</label>
+                <div class="seg" id="seg-mode"><span class="on" data-v="tcping">TCPing</span><span data-v="httping">HTTPing</span></div>
+              </div>
+              <div class="field" style="grid-column: span 2;"><label>&nbsp;</label>
+                <div class="hint">TCPing 测握手延迟；HTTPing 测 TTFB（阈值 ×1.3/×4.0 自动换算），两者数据不可比</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>IP 来源</h3>
+            <div class="field" style="margin-bottom:10px">
+              <label>来源模式</label>
+              <select id="sel-source">
+                <option>仅官方</option><option>仅自定义</option>
+                <option>官方+自定义</option><option>非标列表</option>
+              </select>
+            </div>
+            <div class="field" id="wrap-cidr">
+              <label>自定义 CIDR（每行一个）</label>
+              <textarea id="txt-cidr" placeholder="1.2.3.0/24&#10;2606:4700::/32"></textarea>
+            </div>
+            <div class="field" id="wrap-import" hidden>
+              <label>非标 IP 列表（每行 IP [端口]，未填端口用「端口」参数）</label>
+              <textarea id="txt-import" placeholder="1.2.3.4&#10;5.6.7.8 8443&#10;2606:4700::1111"></textarea>
+              <div class="row" style="margin-top:6px">
+                <label class="btn btn-ghost btn-sm" style="margin:0">
+                  导入文件<input type="file" id="file-import" accept=".txt,.csv" hidden>
+                </label>
+                <span class="hint">支持 txt / csv</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>本次扫描</h3>
+          <div class="funnel" id="scan-funnel"><span class="step">等待开始</span></div>
+        </div>
+
+        <div class="card">
+          <div class="term-head"><h3>运行日志</h3><span class="hint">自动滚动 · 可全选复制</span></div>
+          <div class="term" id="scan-log"></div>
+        </div>
+
+        <div class="row" style="justify-content:center; margin-top:4px">
+          <button class="btn btn-primary" id="btn-start-scan" style="padding:10px 34px">▶ 开始扫描</button>
+        </div>
+      </section>
+
+      <!-- ========== 结果 ========== -->
+      <section class="page" id="page-result">
+        <div class="card">
+          <div class="funnel" id="result-funnel"><span class="step">暂无数据</span></div>
+          <div class="muted" id="result-summary" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <h3>地区分布（点击过滤）</h3>
+          <div class="chips" id="region-chips"><span class="hint">暂无数据，请先扫描或加载历史</span></div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <label class="check"><input type="checkbox" id="chk-latency" checked> 仅显示延迟 &lt;</label>
+            <input type="number" id="in-latency" value="200" min="50" max="9999">
+            <span class="muted">ms</span>
+            <select id="sel-sort"><option value="latency">按延迟升序</option><option value="region">按地区排序</option></select>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" id="btn-single">🎯 单点测速</button>
+            <button class="btn btn-orange btn-sm" id="btn-region-speed">🚀 测速所选地区</button>
+            <button class="btn btn-primary btn-sm" id="btn-full-speed">⬆ 完全测速</button>
+            <button class="btn btn-ghost btn-sm" id="btn-export-scan">⬇ 导出</button>
+          </div>
+          <div class="table-wrap">
+            <table id="scan-table">
+              <thead><tr>
+                <th style="width:34px"></th><th>IP 地址</th><th>地区</th>
+                <th>延迟</th><th>端口</th><th>扫描时间</th>
+              </tr></thead>
+              <tbody id="scan-tbody"><tr><td colspan="6" class="empty">暂无数据</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 测速 ========== -->
+      <section class="page" id="page-speed">
+        <div class="card">
+          <div class="toolbar" style="margin-bottom:0">
+            <span class="muted">地区码</span>
+            <input type="text" id="in-region" class="w-narrow" placeholder="HKG" style="text-transform:uppercase">
+            <span class="muted">数量</span>
+            <input type="number" id="in-count" value="10" min="1" max="50" class="w-narrow">
+            <span class="muted">测速地址</span>
+            <select id="sel-speed-url"><option value="auto">自动</option><option value="manual">手动输入</option></select>
+            <input type="text" id="in-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999" hidden style="width:300px">
+            <label class="check"><input type="checkbox" id="chk-minspeed"> 隐藏低于</label>
+            <input type="number" id="in-minspeed" value="5" min="0" max="200" step="0.5">
+            <span class="muted">MB/s</span>
+            <div class="spacer"></div>
+            <button class="btn btn-orange btn-sm" id="btn-region2">🌸 地区测速</button>
+            <button class="btn btn-primary btn-sm" id="btn-full2">⬆ 完全测速</button>
+            <button class="btn btn-green btn-sm" id="btn-export-speed">⬇ 导出结果</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table id="speed-table">
+              <thead><tr>
+                <th>排名</th><th>IP 地址</th><th>地区</th><th>延迟</th>
+                <th>下载速度</th><th>综合评分</th><th>端口</th><th>测速类型</th>
+              </tr></thead>
+              <tbody id="speed-tbody"><tr><td colspan="8" class="empty">暂无数据</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="term-head"><h3>测速日志</h3></div>
+          <div class="term" id="speed-log"></div>
+        </div>
+      </section>
+
+      <!-- ========== 历史 ========== -->
+      <section class="page" id="page-history">
+        <div class="row" style="margin-bottom:14px">
+          <span class="muted">IP 版本</span>
+          <div class="seg" id="seg-hist-ver"><span class="on" data-v="4">IPv4</span><span data-v="6">IPv6</span></div>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-hist-refresh">🔄 刷新</button>
+        </div>
+        <div class="card"><h3>扫描记录</h3><div id="hist-scan-list"></div></div>
+        <div class="card"><h3>测速记录</h3><div id="hist-speed-list"></div></div>
+      </section>
+
+      <!-- ========== 设置 ========== -->
+      <section class="page" id="page-settings">
+        <div class="set-grid">
+          <div class="card">
+            <h3>常规</h3>
+            <div class="set-row"><span class="grow">关闭窗口时最小化到托盘（桌面版）</span>
+              <div class="switch" id="sw-tray"></div></div>
+            <div class="set-row"><span class="grow">扫描方式默认值</span>
+              <select id="set-scan-mode"><option value="tcping">tcping</option><option value="httping">httping</option></select></div>
+            <div class="set-row"><span class="grow">采样上限默认值</span>
+              <input type="number" id="set-sample" min="100" max="50000"></div>
+          </div>
+
+          <div class="card">
+            <h3>测速</h3>
+            <div class="set-row"><span class="grow">测速地址</span>
+              <select id="set-speed-url-mode"><option value="auto">auto</option><option value="manual">手动输入</option></select></div>
+            <div class="set-row" id="row-speed-url" hidden><span class="grow">地址</span>
+              <input type="text" id="set-speed-url" placeholder="speed.cloudflare.com/__down?bytes=99999999"></div>
+            <div class="set-row"><span class="grow">测速前验证 Cloudflare 节点</span>
+              <div class="switch" id="sw-verify"></div></div>
+            <div class="set-row"><span class="grow">合格阈值 (MB/s)</span>
+              <input type="number" id="set-minspeed" min="0" max="200" step="0.5"></div>
+            <div class="set-row"><span class="grow">测速间隔 (秒)</span>
+              <input type="number" id="set-interval" min="0" max="15"></div>
+          </div>
+
+          <div class="card">
+            <h3>综合评分权重</h3>
+            <div class="hint" style="margin-bottom:8px">score = 速度权重 × MB/s ÷ (1 + 延迟权重 × 延迟秒)</div>
+            <div class="set-row"><span class="grow">速度权重</span><input type="number" id="set-w-speed" min="0" max="50" step="0.5"></div>
+            <div class="set-row"><span class="grow">延迟权重</span><input type="number" id="set-w-latency" min="0" max="50" step="0.5"></div>
+          </div>
+
+          <div class="card">
+            <h3>HTTP 服务面板</h3>
+            <div class="set-row"><span class="grow">启用 HTTP 服务</span>
+              <div class="switch" id="sw-http"></div></div>
+            <div class="set-row"><span class="grow">监听端口</span><input type="number" id="set-port" min="1" max="65535"></div>
+            <div class="set-row"><span class="grow">允许局域网访问</span><div class="switch" id="sw-lan"></div></div>
+            <div class="set-row"><span class="grow">访问 Token</span>
+              <input type="password" id="set-token" placeholder="留空则不鉴权"></div>
+            <div class="hint" id="http-hint"></div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" id="btn-set-save">💾 保存设置</button>
+          <button class="btn btn-ghost" id="btn-set-restore">恢复默认</button>
+          <button class="btn btn-ghost" id="btn-set-health">体检配置</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- 通用弹窗 -->
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal">
+    <div class="modal-header" id="modal-title">标题</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

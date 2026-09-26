@@ -126,6 +126,24 @@ def _cleanup_legacy_files():
                 logger.warning("删除旧格式失败 %s: %s", f, e)
 
 
+def delete_history(filepath: str) -> bool:
+    """删除一条历史记录（限制在 SAVE_DIR 内，防止误删任意文件）。"""
+    try:
+        real = os.path.realpath(filepath)
+        base = os.path.realpath(SAVE_DIR)
+        if not real.startswith(base + os.sep):
+            logger.warning("拒绝删除保存目录之外的文件: %s", filepath)
+            return False
+        if not os.path.isfile(real):
+            return False
+        os.remove(real)
+        logger.info("已删除历史记录: %s", os.path.basename(real))
+        return True
+    except Exception as e:
+        logger.error("删除历史记录失败: %s", e)
+        return False
+
+
 def load_results_from_file(filepath: str) -> Optional[Dict]:
     try:
         if not os.path.exists(filepath):

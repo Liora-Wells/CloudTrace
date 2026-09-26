@@ -6,12 +6,13 @@ from typing import List, Dict, Optional
 from PySide6.QtWidgets import (
     QDialog, QLabel, QPushButton, QFrame,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView,
+    QHeaderView, QRadioButton, QCheckBox, QDoubleSpinBox, QButtonGroup,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from core.constants import FONT_FAMILY
+from core.export import SCAN_FIELDS, SPEED_FIELDS
 from ui.styles import FONT_BTN, FONT_SMALL
 from settings import get_history_list
 
@@ -376,4 +377,177 @@ class ExportSelectDialog(QDialog):
 
     def _choose(self, choice: str):
         self.choice = choice
+        self.accept()
+
+
+class ExportDialog(QDialog):
+    """导出对话框：内容选择 + 字段勾选 + 合格筛选。"""
+
+    def __init__(self, has_scan: bool, has_speed: bool, parent=None,
+                 initial_choice: str = None):
+        super().__init__(parent)
+        self.setWindowTitle("导出结果")
+        self.setMinimumWidth(430)
+        self.choice = None            # 'scan' | 'speed' | 'both'
+        self.fields: list = None      # None = 全部字段
+        self.qualified_only = False
+        self.min_speed = 0.0
+
+        self.setStyleSheet(
+            f"QDialog {{ background: #F9FAFB; font-family: '{FONT_FAMILY}', sans-serif; }}"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 18, 22, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("导出结果")
+        title.setFont(QFont(FONT_FAMILY, 13))
+        title.setStyleSheet("color: #111827; font-weight: bold;")
+        layout.addWidget(title)
+
+        # ---- 内容 ----
+        content_box = QFrame()
+        content_box.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #E5E7EB; border-radius: 8px; }"
+        )
+        content_lay = QVBoxLayout(content_box)
+        content_lay.setContentsMargins(14, 10, 14, 10)
+        content_lay.setSpacing(6)
+        content_title = QLabel("导出内容")
+        content_title.setStyleSheet("color: #6B7280; font-size: 12px; border: none; background: transparent;")
+        content_lay.addWidget(content_title)
+
+        self._choice_group = QButtonGroup(self)
+        self._radio_scan = QRadioButton("扫描结果")
+        self._radio_speed = QRadioButton("测速结果")
+        self._radio_both = QRadioButton("扫描 + 测速（分别保存）")
+        radios = []
+        if has_scan:
+            radios.append(self._radio_scan)
+        if has_speed:
+            radios.append(self._radio_speed)
+        if has_scan and has_speed:
+            radios.append(self._radio_both)
+        for r in radios:
+            r.setFont(QFont(FONT_FAMILY, 10))
+            content_lay.addWidget(r)
+            self._choice_group.addButton(r)
+        # 默认选中
+        if initial_choice == "scan" and has_scan:
+            self._radio_scan.setChecked(True)
+        elif initial_choice == "speed" and has_speed:
+            self._radio_speed.setChecked(True)
+        elif radios:
+            radios[0].setChecked(True)
+        if has_scan and has_speed and initial_choice is None:
+            self._radio_both.setChecked(True)
+        layout.addWidget(content_box)
+
+        # ---- 字段 ----
+        fields_box = QFrame()
+        fields_box.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #E5E7EB; border-radius: 8px; }"
+        )
+        fields_lay = QVBoxLayout(fields_box)
+        fields_lay.setContentsMargins(14, 10, 14, 10)
+        fields_lay.setSpacing(6)
+
+        fields_head = QHBoxLayout()
+        fields_title = QLabel("导出字段")
+        fields_title.setStyleSheet("color: #6B7280; font-size: 12px; border: none; background: transparent;")
+        self._btn_all = QPushButton("全不选")
+        self._btn_all.setFixedHeight(22)
+        self._btn_all.setStyleSheet(
+            "QPushButton { background: white; border: 1px solid #D1D5DB; border-radius: 5px;"
+            " color: #6B7280; font-size: 11px; padding: 2px 8px; }"
+            "QPushButton:hover { background: #F3F4F6; }"
+        )
+        fields_head.addWidget(fields_title)
+        fields_head.addStretch()
+        fields_head.addWidget(self._btn_all)
+        fields_lay.addLayout(fields_head)
+
+        merged = dict(SCAN_FIELDS)
+        merged.update(SPEED_FIELDS)
+        self._field_checks: dict = {}
+        row_lay = None
+        for i, (key, label) in enumerate(merged.items()):
+            if i % 3 == 0:
+                row_lay = QHBoxLayout()
+                row_lay.setSpacing(10)
+                fields_lay.addLayout(row_lay)
+            chk = QCheckBox(label)
+            chk.setFont(QFont(FONT_FAMILY, 9))
+            if key == "ip":
+                chk.setChecked(True)
+                chk.setEnabled(False)  # IP 列必选
+            else:
+                chk.setChecked(True)
+            row_lay.addWidget(chk)
+            self._field_checks[key] = chk
+        self._btn_all.clicked.connect(self._toggle_fields)
+        layout.addWidget(fields_box)
+
+        # ---- 合格筛选 ----
+        q_box = QFrame()
+        q_box.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #E5E7EB; border-radius: 8px; }"
+        )
+        q_lay = QHBoxLayout(q_box)
+        q_lay.setContentsMargins(14, 10, 14, 10)
+        q_lay.setSpacing(8)
+        self.chk_qualified = QCheckBox("测速仅导出合格结果，低于")
+        self.spin_min = QDoubleSpinBox()
+        self.spin_min.setRange(0, 200)
+        self.spin_min.setDecimals(1)
+        self.spin_min.setSuffix(" MB/s")
+        self.spin_min.setFixedHeight(26)
+        self.spin_min.setEnabled(False)
+        self.chk_qualified.stateChanged.connect(self.spin_min.setEnabled)
+        q_lay.addWidget(self.chk_qualified)
+        q_lay.addWidget(self.spin_min)
+        q_lay.addStretch()
+        layout.addWidget(q_box)
+
+        # ---- 按钮 ----
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel = QPushButton("取消")
+        cancel.setFixedSize(90, 34)
+        cancel.setStyleSheet(
+            "QPushButton { background: #F3F4F6; color: #374151; border: 1px solid #D1D5DB;"
+            " border-radius: 7px; font-family: '%s'; } QPushButton:hover { background: #E5E7EB; }" % FONT_FAMILY
+        )
+        cancel.clicked.connect(self.reject)
+        ok = QPushButton("导出")
+        ok.setFixedSize(90, 34)
+        ok.setStyleSheet(
+            "QPushButton { background: #3B82F6; color: white; border: none; border-radius: 7px;"
+            " font-family: '%s'; } QPushButton:hover { background: #2563EB; }" % FONT_FAMILY
+        )
+        ok.setDefault(True)
+        ok.clicked.connect(self._accept)
+        btn_row.addWidget(cancel)
+        btn_row.addWidget(ok)
+        layout.addLayout(btn_row)
+
+    def _toggle_fields(self):
+        will_uncheck = self._btn_all.text() == "全不选"
+        for key, chk in self._field_checks.items():
+            if chk.isEnabled():
+                chk.setChecked(not will_uncheck)
+        self._btn_all.setText("全选" if will_uncheck else "全不选")
+
+    def _accept(self):
+        if self._radio_scan.isChecked():
+            self.choice = "scan"
+        elif self._radio_speed.isChecked():
+            self.choice = "speed"
+        else:
+            self.choice = "both"
+        selected = [k for k, c in self._field_checks.items() if c.isChecked()]
+        all_keys = list(self._field_checks.keys())
+        self.fields = selected if len(selected) < len(all_keys) else None
+        self.qualified_only = self.chk_qualified.isChecked()
+        self.min_speed = self.spin_min.value()
         self.accept()

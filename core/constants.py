@@ -200,13 +200,15 @@ def load_or_update_ip_cache(ip_version: int):
         pass
 
     current_time = time.time()
-    if cache.get(key) and (current_time - cache.get('update_time', 0) < IP_CACHE_UPDATE_INTERVAL):
+    # 每个 IP 版本独立记录更新时间，避免更新 v4 顺带给 v6 缓存“续期”
+    ts_key = f"{key}_update_time"
+    if cache.get(key) and (current_time - cache.get(ts_key, 0) < IP_CACHE_UPDATE_INTERVAL):
         return cache[key]
 
     official_list = fetch_official_cidrs(url)
     if official_list:
         cache[key] = official_list
-        cache['update_time'] = current_time
+        cache[ts_key] = current_time
         try:
             with open(IP_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(cache, f, ensure_ascii=False, indent=2)
