@@ -192,6 +192,15 @@ class SpeedPage(QWidget):
     def health_snapshot(self) -> dict:
         return {"min_speed": self.collect()["min_speed"], "speed_url": self.collect()["speed_url"]}
 
+    def reload_from_settings(self, full: bool = False):
+        """把设置回填到测速页表单（speed_url 始终同步；full 时含 min_speed）。"""
+        s = self.app_settings
+        url = s.get("speed_url", "auto")
+        self.combo_speed_url.setCurrentText("手动输入" if url not in ("auto", "") else "自动测速地址")
+        self.input_speed_url.setText("" if url in ("auto", "") else url)
+        if full:
+            self.spin_min_speed.setValue(float(s.get("min_speed", 0)))
+
     # ---------------- 数据 ----------------
     def set_results(self, results: List[Dict]):
         self.all_results = list(results or [])

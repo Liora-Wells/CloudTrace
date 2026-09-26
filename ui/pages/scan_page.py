@@ -212,6 +212,22 @@ class ScanPage(QWidget):
             self.app_settings["cidr_mode"] = mode
             save_settings(self.app_settings)
 
+    def reload_from_settings(self, full: bool = False):
+        """把设置回填到扫描页表单，保证界面与实际设置一致。
+
+        full=False 只同步「设置页拥有」的字段（scan_mode / sample_max），
+        避免保存设置时覆盖用户在扫描页尚未持久化的改动；
+        full=True 用于「恢复默认」，把全部参数一并回填。
+        """
+        s = self.app_settings
+        self.spin_sample.setValue(int(s.get("sample_max", 5000)))
+        self.seg_mode.set_index(0 if s.get("scan_mode", "tcping") == "tcping" else 1)
+        if full:
+            self.spin_workers.setValue(int(s.get("workers", 200)))
+            self.spin_threshold.setValue(int(s.get("latency_threshold", 230)))
+            self.spin_ping.setValue(int(s.get("ping_times", 0)))
+            self.combo_source.setCurrentText(s.get("cidr_mode", "仅官方"))
+
     def persist_scan_params(self):
         """把扫描页参数写回设置，保证下次启动沿用（不覆盖设置页拥有的 sample_max/scan_mode）。"""
         changed = False

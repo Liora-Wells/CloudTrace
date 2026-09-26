@@ -23,7 +23,8 @@ from ui.dialogs import CustomMessageBox
 class SettingsPage(QWidget):
     """设置页：分组卡片表单 + 保存/恢复/体检。"""
 
-    saved = Signal(dict)
+    saved = Signal(dict)       # 保存设置：同步「设置页拥有」的字段
+    restored = Signal(dict)    # 恢复默认：需全量回填各页表单
 
     def __init__(self, app_settings: dict, parent=None):
         super().__init__(parent)
@@ -317,7 +318,9 @@ class SettingsPage(QWidget):
         # 用户再点「保存设置」会把旧值重新写回，恢复默认形同无效。
         self.reload_from_settings()
         CustomMessageBox.information(self, "完成", "已恢复默认设置")
-        self.saved.emit(dict(self.app_settings))
+        # 用独立信号：恢复默认需要把扫描页/测速页的表单也一并回填，
+        # 否则界面仍显示旧值，与 settings.json 不一致。
+        self.restored.emit(dict(self.app_settings))
 
     def show_health(self):
         warnings = validate_settings(self._merged_for_health())

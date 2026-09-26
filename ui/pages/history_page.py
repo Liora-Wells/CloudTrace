@@ -137,9 +137,11 @@ class HistoryPage(QWidget):
         btn_export = op("导出", "#8B5CF6", primary=True)
         btn_del = op("删除", C_RED, primary=True)
         filepath = h["filepath"]
-        btn_load.clicked.connect(lambda _c, fp=filepath: self.load_requested.emit(fp, type_key))
-        btn_export.clicked.connect(lambda _c, fp=filepath: self.export_requested.emit(fp, type_key))
-        btn_del.clicked.connect(lambda _c, fp=filepath: self._confirm_delete(fp))
+        # 首参必须带默认值：PySide6 的 clicked 只有 0/1 参重载，
+        # 2 个参数的 lambda 会匹配失败并静默不执行（详见 ui/widgets.py 注释）。
+        btn_load.clicked.connect(lambda _c=False, fp=filepath: self.load_requested.emit(fp, type_key))
+        btn_export.clicked.connect(lambda _c=False, fp=filepath: self.export_requested.emit(fp, type_key))
+        btn_del.clicked.connect(lambda _c=False, fp=filepath: self._confirm_delete(fp))
         lay.addWidget(btn_load)
         lay.addWidget(btn_export)
         lay.addWidget(btn_del)

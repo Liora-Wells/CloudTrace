@@ -113,7 +113,11 @@ class Segmented(QWidget):
             lay.addWidget(btn)
             self._group.addButton(btn, i)
             self._buttons.append(btn)
-            btn.clicked.connect(lambda _c, idx=i: self.indexChanged.emit(idx))
+            # 注意：PySide6 的 clicked 只有 clicked()/clicked(bool) 两个重载。
+            # 带 2 个参数的 lambda 匹配不到重载，会退化为无参调用并抛
+            # TypeError(<lambda>() missing 1 required positional argument: '_c')，
+            # 且回调完全不执行。因此首参必须带默认值。
+            btn.clicked.connect(lambda _c=False, idx=i: self.indexChanged.emit(idx))
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -183,7 +187,7 @@ class RegionChips(QWidget):
             btn.setFont(QFont(FONT_FAMILY, 9))
             btn.setStyleSheet(CHIP_STYLE)
             btn.setChecked(s['code'] in self._selected)
-            btn.clicked.connect(lambda _c, code=s['code']: self._toggle(code))
+            btn.clicked.connect(lambda _c=False, code=s['code']: self._toggle(code))
             self._flow.addWidget(btn)
 
     def _toggle(self, code: str):
@@ -344,7 +348,7 @@ class SideNav(QFrame):
             lay.addWidget(btn)
             self._group.addButton(btn, i)
             self._buttons.append(btn)
-            btn.clicked.connect(lambda _c, idx=i: self.pageChanged.emit(idx))
+            btn.clicked.connect(lambda _c=False, idx=i: self.pageChanged.emit(idx))
 
         lay.addStretch()
         footer = QLabel("v" + _safe_version())

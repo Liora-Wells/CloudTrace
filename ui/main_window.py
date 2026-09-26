@@ -253,7 +253,20 @@ class CloudflareScanUI(QWidget):
 
         self.settings_page.set_param_provider(self.scan_page.health_snapshot)
         self.settings_page.set_param_provider(self.speed_page.health_snapshot)
-        self.settings_page.saved.connect(self._sync_http_server)
+        self.settings_page.saved.connect(self._on_settings_saved)
+        self.settings_page.restored.connect(self._on_settings_restored)
+
+    def _on_settings_saved(self, *_args):
+        """保存设置后：回填「设置页拥有」的字段到扫描/测速页，并同步 HTTP 服务。"""
+        self.scan_page.reload_from_settings()
+        self.speed_page.reload_from_settings()
+        self._sync_http_server()
+
+    def _on_settings_restored(self, *_args):
+        """恢复默认后：全量回填扫描/测速页表单，并同步 HTTP 服务。"""
+        self.scan_page.reload_from_settings(full=True)
+        self.speed_page.reload_from_settings(full=True)
+        self._sync_http_server()
 
     def _sync_http_server(self, *_args):
         """按设置启动/停止 HTTP 面板服务。"""
